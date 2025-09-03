@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { db } from "@/firebase";
+import { collection, getDocs } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,104 +24,46 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-// Mock data
-const mockStudents = [
-  {
-    id: 1,
-    name: "Emma Johnson",
-    class: "10",
-    division: "A",
-    gender: "Female",
-    mentalHealthStatus: "positive",
-    needsHelp: false,
-    lastEssayDate: "2024-01-15",
-    reportsCount: 3,
-    essays: [
-      { id: 1, title: "My Daily Routine", content: "I wake up every morning feeling grateful...", sentiment: "positive", date: "2024-01-15" },
-      { id: 2, title: "School Challenges", content: "Sometimes I find math difficult but I keep trying...", sentiment: "neutral", date: "2024-01-10" }
-    ]
-  },
-  {
-    id: 2,
-    name: "Alex Smith",
-    class: "10",
-    division: "B",
-    gender: "Male",
-    mentalHealthStatus: "negative",
-    needsHelp: true,
-    lastEssayDate: "2024-01-14",
-    reportsCount: 5,
-    essays: [
-      { id: 3, title: "Feeling Overwhelmed", content: "I've been feeling very stressed lately...", sentiment: "negative", date: "2024-01-14" },
-      { id: 4, title: "Family Issues", content: "Things at home have been difficult...", sentiment: "negative", date: "2024-01-12" }
-    ]
-  },
-  {
-    id: 3,
-    name: "Sarah Williams",
-    class: "11",
-    division: "A",
-    gender: "Female",
-    mentalHealthStatus: "positive",
-    needsHelp: false,
-    lastEssayDate: "2024-01-16",
-    reportsCount: 2,
-    essays: [
-      { id: 5, title: "My Future Dreams", content: "I'm excited about becoming a doctor...", sentiment: "positive", date: "2024-01-16" }
-    ]
-  },
-  {
-    id: 4,
-    name: "Michael Brown",
-    class: "11",
-    division: "B",
-    gender: "Male",
-    mentalHealthStatus: "neutral",
-    needsHelp: false,
-    lastEssayDate: "2024-01-13",
-    reportsCount: 4,
-    essays: [
-      { id: 6, title: "School Life", content: "School is okay, nothing special happening...", sentiment: "neutral", date: "2024-01-13" }
-    ]
-  },
-  {
-    id: 5,
-    name: "Lisa Davis",
-    class: "12",
-    division: "A",
-    gender: "Female",
-    mentalHealthStatus: "negative",
-    needsHelp: true,
-    lastEssayDate: "2024-01-11",
-    reportsCount: 6,
-    essays: [
-      { id: 7, title: "Exam Pressure", content: "The pressure to perform well is overwhelming...", sentiment: "negative", date: "2024-01-11" }
-    ]
-  }
-];
-
 const TeacherDashboard = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClass, setSelectedClass] = useState("all");
   const [selectedDivision, setSelectedDivision] = useState("all");
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [checkins, setCheckins] = useState([]);
+  const [students, setStudents] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchStudents = async () => {
+      const querySnapshot = await getDocs(collection(db, "students"));
+      setStudents(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    };
+    fetchStudents();
+  }, []);
+
+  useEffect(() => {
+    const fetchCheckins = async () => {
+      const querySnapshot = await getDocs(collection(db, "checkins"));
+      setCheckins(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    };
+    fetchCheckins();
+  }, []);
 
   // Filter students based on search and filters
-  const filteredStudents = mockStudents.filter(student => {
-    const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredStudents = students.filter(student => {
+    const matchesSearch = student.name?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesClass = selectedClass === "all" || student.class === selectedClass;
     const matchesDivision = selectedDivision === "all" || student.division === selectedDivision;
     return matchesSearch && matchesClass && matchesDivision;
   });
 
   // Calculate statistics
-  const totalStudents = mockStudents.length;
-  const maleStudents = mockStudents.filter(s => s.gender === "Male").length;
-  const femaleStudents = mockStudents.filter(s => s.gender === "Female").length;
-  const positiveStudents = mockStudents.filter(s => s.mentalHealthStatus === "positive").length;
-  const negativeStudents = mockStudents.filter(s => s.mentalHealthStatus === "negative").length;
-  const needsHelpCount = mockStudents.filter(s => s.needsHelp).length;
+  const totalStudents = students.length;
+  const maleStudents = students.filter(s => s.gender === "Male").length;
+  const femaleStudents = students.filter(s => s.gender === "Female").length;
+  const positiveStudents = students.filter(s => s.mentalHealthStatus === "positive").length;
+  const negativeStudents = students.filter(s => s.mentalHealthStatus === "negative").length;
+  const needsHelpCount = students.filter(s => s.needsHelp).length;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -399,6 +343,28 @@ const TeacherDashboard = () => {
                 </TableBody>
               </Table>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Student Check-ins */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Student Check-ins</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2">
+              {checkins.map((checkin: any) => (
+                <li key={checkin.id} className="flex justify-between items-center p-4 bg-muted rounded-lg">
+                  <div>
+                    <strong>{checkin.studentEmail}</strong>
+                    <p className="text-sm text-muted-foreground">{checkin.mood}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {checkin.createdAt?.toDate?.().toLocaleString?.()}
+                  </p>
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
 

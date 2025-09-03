@@ -4,19 +4,21 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Shield, Mail, Lock, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { auth } from "@/firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 const TeacherLogin = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Test credentials for demo
-    if (email === "teacher@school.edu" && password === "teacher123") {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
       navigate("/teacher-dashboard");
-    } else {
-      alert("Test credentials: teacher@school.edu / teacher123");
+    } catch (error: any) {
+      alert(error.message);
     }
   };
 

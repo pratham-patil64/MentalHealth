@@ -4,19 +4,21 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Heart, Mail, Lock, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { auth } from "@/firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 const StudentLogin = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Test credentials for demo
-    if (email === "student@school.edu" && password === "student123") {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
       navigate("/student-dashboard");
-    } else {
-      alert("Test credentials: student@school.edu / student123");
+    } catch (error: any) {
+      alert(error.message);
     }
   };
 
@@ -75,12 +77,15 @@ const StudentLogin = () => {
               </div>
 
               <Button type="submit" className="w-full" size="lg">
-                Sign In to Dashboard
+                Sign In 
               </Button>
               
               <div className="text-center space-y-4">
                 <Button variant="link" className="text-primary">
                   Forgot your password?
+                </Button>
+                <Button variant="link" onClick={() => navigate("/student-register")}>
+                  New student? Register here
                 </Button>
                 <p className="text-sm text-muted-foreground">
                   Need help? Contact your school's IT support
