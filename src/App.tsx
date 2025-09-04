@@ -20,10 +20,10 @@ import StudentRegister from "@/components/StudentRegister";
 
 const queryClient = new QueryClient();
 
-// Helper component to protect routes
-const ProtectedRoute = ({ user, children }: { user: User | null; children: ReactNode }) => {
+// Helper component to protect routes, now with a customizable redirect path
+const ProtectedRoute = ({ user, children, redirectTo = "/student-login" }: { user: User | null; children: ReactNode; redirectTo?: string }) => {
   if (!user) {
-    return <Navigate to="/student-login" replace />;
+    return <Navigate to={redirectTo} replace />;
   }
   return <>{children}</>;
 };
@@ -36,19 +36,21 @@ const AppRoutes = () => {
   const location = useLocation();
 
   useEffect(() => {
-    // This is the listener that detects logins, logouts, and registrations.
+    // This listener detects logins, logouts, and registrations globally.
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAuthUser(user);
       setAuthLoading(false);
       
-      // If a user has just logged in or registered, redirect them to the dashboard.
+      // If a user has just logged in or registered as a student, redirect them.
+      // Teacher redirection is handled within TeacherLogin to allow for role verification first.
       if (user && (location.pathname === "/student-login" || location.pathname === "/student-register")) {
         navigate("/student-dashboard");
       }
     });
 
+    // Cleanup the listener when the component unmounts
     return () => unsubscribe();
-  }, [navigate, location.pathname]); // Re-run if navigation or location changes
+  }, [navigate, location.pathname]);
 
   if (authLoading) {
     return <div className="flex h-screen w-full items-center justify-center">Authenticating...</div>;
@@ -56,21 +58,34 @@ const AppRoutes = () => {
 
   return (
     <Routes>
+      {/* Public Routes */}
       <Route path="/" element={<Index />} />
       <Route path="/student-login" element={<StudentLogin />} />
       <Route path="/teacher-login" element={<TeacherLogin />} />
       <Route path="/student-register" element={<StudentRegister />} />
       
+      {/* Protected Student Route */}
       <Route
         path="/student-dashboard"
         element={
-          <ProtectedRoute user={authUser}>
+          <ProtectedRoute user={authUser} redirectTo="/student-login">
+            {/* We must ensure authUser is not null before passing it as a prop */}
             {authUser && <StudentDashboard user={authUser} />}
           </ProtectedRoute>
         }
       />
 
-      <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
+      {/* Protected Teacher Route */}
+      <Route
+        path="/teacher-dashboard"
+        element={
+          <ProtectedRoute user={authUser} redirectTo="/teacher-login">
+            <TeacherDashboard />
+          </ProtectedRoute>
+        }
+      />
+      
+      {/* Catch-all Not Found Route */}
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
