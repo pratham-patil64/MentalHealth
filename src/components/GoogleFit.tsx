@@ -12,6 +12,8 @@ const GoogleFit = () => {
     const [profile, setProfile] = useState<any>(null);
     const [steps, setSteps] = useState<any[]>([]);
     const [sleep, setSleep] = useState<any[]>([]);
+    const [heartRate, setHeartRate] = useState<any[]>([]);
+    const [calories, setCalories] = useState<any[]>([]);
     const [error, setError] = useState<string | null>(null);
 
     const login = useGoogleLogin({
@@ -23,7 +25,8 @@ const GoogleFit = () => {
             console.error('Google Login Failed:', error);
             setError('Login Failed. Please try again.');
         },
-        scope: 'https://www.googleapis.com/auth/fitness.activity.read https://www.googleapis.com/auth/fitness.sleep.read',
+        // IMPORTANT: Added scopes for heart rate and calories
+        scope: 'https://www.googleapis.com/auth/fitness.activity.read https://www.googleapis.com/auth/fitness.sleep.read https://www.googleapis.com/auth/fitness.heart_rate.read https://www.googleapis.com/auth/fitness.body.read',
     });
 
     useEffect(() => {
@@ -57,7 +60,7 @@ const GoogleFit = () => {
                     'Content-Type': 'application/json',
                 };
 
-                // 3. --- REVISED STEPS REQUEST ---
+                // 3. --- STEPS REQUEST ---
                 const stepsResponse = await axios.post(
                     'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
                     {
@@ -76,8 +79,7 @@ const GoogleFit = () => {
                     setSteps(stepsData);
                 }
 
-                // 4. --- REVISED SLEEP REQUEST ---
-                // Aggregating sleep segments by day on the server.
+                // 4. --- SLEEP REQUEST ---
                 const sleepResponse = await axios.post(
                     'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
                     {
@@ -93,7 +95,6 @@ const GoogleFit = () => {
                         let totalSleepNanos = 0;
                         if (bucket.dataset[0]?.point?.length > 0) {
                             totalSleepNanos = bucket.dataset[0].point.reduce((total: number, point: any) => {
-                                // value[2] corresponds to the sleep stage. We sum all stages (1-5 for light, deep, REM etc.)
                                 return total + (point.endTimeNanos - point.startTimeNanos);
                             }, 0);
                         }
@@ -103,8 +104,45 @@ const GoogleFit = () => {
                     setSleep(sleepData);
                 }
 
+                // 5. --- HEART RATE REQUEST ---
+                const heartResponse = await axios.post(
+                    'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
+                    {
+                        ...requestBodyBase,
+                        aggregateBy: [{ dataTypeName: 'com.google.heart_rate.bpm' }],
+                    },
+                    { headers }
+                );
+
+                if (heartResponse.data.bucket) {
+                    const heartData = heartResponse.data.bucket.map((bucket: any) => {
+                        const date = new Date(parseInt(bucket.startTimeMillis)).toLocaleDateString();
+                        const value = bucket.dataset[0]?.point?.[0]?.value?.[0]?.fpVal || 0;
+                        return { date, bpm: Math.round(value) };
+                    });
+                    setHeartRate(heartData);
+                }
+
+                // 6. --- CALORIES EXPENDED REQUEST ---
+                const caloriesResponse = await axios.post(
+                    'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
+                    {
+                        ...requestBodyBase,
+                        aggregateBy: [{ dataTypeName: 'com.google.calories.expended' }],
+                    },
+                    { headers }
+                );
+
+                if (caloriesResponse.data.bucket) {
+                    const caloriesData = caloriesResponse.data.bucket.map((bucket: any) => {
+                        const date = new Date(parseInt(bucket.startTimeMillis)).toLocaleDateString();
+                        const value = bucket.dataset[0]?.point?.[0]?.value?.[0]?.fpVal || 0;
+                        return { date, calories: Math.round(value) };
+                    });
+                    setCalories(caloriesData);
+                }
+
             } catch (err: any) {
-                // This is the most important part for debugging
                 if (err.response) {
                     console.error("Google Fit API Error Response:", err.response.data);
                     const errorMessage = err.response.data?.error?.message || "An unknown error occurred while fetching Google Fit data.";
@@ -124,6 +162,8 @@ const GoogleFit = () => {
         setUser(null);
         setSteps([]);
         setSleep([]);
+        setHeartRate([]);
+        setCalories([]);
         setError(null);
     };
 
@@ -167,6 +207,38 @@ const GoogleFit = () => {
                                         <Tooltip />
                                         <Legend />
                                         <Bar dataKey="hours" fill="#82ca9d" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Weekly Heart Rate (Avg BPM)</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <BarChart data={heartRate}>
+                                        <XAxis dataKey="date" />
+                                        <YAxis />
+                                        <Tooltip />
+                                        <Legend />
+                                        <Bar dataKey="bpm" fill="#ffc658" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Weekly Calories Burned</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <BarChart data={calories}>
+                                        <XAxis dataKey="date" />
+                                        <YAxis />
+                                        <Tooltip />
+                                        <Legend />
+                                        <Bar dataKey="calories" fill="#ff8042" />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </CardContent>
