@@ -2,6 +2,7 @@ import { useEffect, useState, ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/firebase";
+import { GoogleOAuthProvider } from '@react-oauth/google'; // Import the provider
 
 // UI and Provider Imports
 import { Toaster } from "@/components/ui/toaster";
@@ -20,7 +21,7 @@ import StudentRegister from "@/components/StudentRegister";
 
 const queryClient = new QueryClient();
 
-// Helper component to protect routes, now with a customizable redirect path
+// Helper component to protect routes
 const ProtectedRoute = ({ user, children, redirectTo = "/student-login" }: { user: User | null; children: ReactNode; redirectTo?: string }) => {
   if (!user) {
     return <Navigate to={redirectTo} replace />;
@@ -28,7 +29,7 @@ const ProtectedRoute = ({ user, children, redirectTo = "/student-login" }: { use
   return <>{children}</>;
 };
 
-// This new component contains our routing and auth logic
+// App routing logic
 const AppRoutes = () => {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -36,19 +37,15 @@ const AppRoutes = () => {
   const location = useLocation();
 
   useEffect(() => {
-    // This listener detects logins, logouts, and registrations globally.
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAuthUser(user);
       setAuthLoading(false);
       
-      // If a user has just logged in or registered as a student, redirect them.
-      // Teacher redirection is handled within TeacherLogin to allow for role verification first.
       if (user && (location.pathname === "/student-login" || location.pathname === "/student-register")) {
         navigate("/student-dashboard");
       }
     });
 
-    // Cleanup the listener when the component unmounts
     return () => unsubscribe();
   }, [navigate, location.pathname]);
 
@@ -58,24 +55,20 @@ const AppRoutes = () => {
 
   return (
     <Routes>
-      {/* Public Routes */}
       <Route path="/" element={<Index />} />
       <Route path="/student-login" element={<StudentLogin />} />
       <Route path="/teacher-login" element={<TeacherLogin />} />
       <Route path="/student-register" element={<StudentRegister />} />
       
-      {/* Protected Student Route */}
       <Route
         path="/student-dashboard"
         element={
           <ProtectedRoute user={authUser} redirectTo="/student-login">
-            {/* We must ensure authUser is not null before passing it as a prop */}
             {authUser && <StudentDashboard user={authUser} />}
           </ProtectedRoute>
         }
       />
 
-      {/* Protected Teacher Route */}
       <Route
         path="/teacher-dashboard"
         element={
@@ -85,23 +78,25 @@ const AppRoutes = () => {
         }
       />
       
-      {/* Catch-all Not Found Route */}
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
 };
 
-// Main App component now just sets up the providers and router
+// Main App component
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  // Wrap the entire app with GoogleOAuthProvider
+  <GoogleOAuthProvider clientId="162276798485-j874m3oenarvot0qpemr4k14to8kd0fh.apps.googleusercontent.com">
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </GoogleOAuthProvider>
 );
 
 export default App;

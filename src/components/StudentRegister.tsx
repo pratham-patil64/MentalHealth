@@ -6,13 +6,12 @@ import { setDoc, doc } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const StudentRegister = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [studentClass, setStudentClass] = useState("");
-  const [division, setDivision] = useState("");
   const [gender, setGender] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -22,21 +21,19 @@ const StudentRegister = () => {
     setLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
       await setDoc(doc(db, "students", userCredential.user.uid), {
         uid: userCredential.user.uid,
         email,
         name,
-        class: studentClass,
-        division,
         gender,
         mentalHealthStatus: "neutral",
         reportsCount: 0,
         needsHelp: false,
         lastEssayDate: "",
-        essays: [],
       });
-    //   alert("Registration successful!");
-    //   navigate("/student-dashboard");
+      
+      navigate("/student-dashboard");
     } catch (error: any) {
       alert(error.message);
     }
@@ -72,29 +69,16 @@ const StudentRegister = () => {
                 onChange={e => setPassword(e.target.value)}
                 required
               />
-              <Input
-                placeholder="Class (e.g., 10, 11, 12)"
-                value={studentClass}
-                onChange={e => setStudentClass(e.target.value)}
-                required
-              />
-              <Input
-                placeholder="Division (e.g., A, B, C)"
-                value={division}
-                onChange={e => setDivision(e.target.value)}
-                required
-              />
-              <select
-                className="w-full p-2 border rounded"
-                value={gender}
-                onChange={e => setGender(e.target.value)}
-                required
-              >
-                <option value="">Select Gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
-              </select>
+              <Select onValueChange={setGender} required>
+                  <SelectTrigger>
+                      <SelectValue placeholder="Select Gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                      <SelectItem value="Male">Male</SelectItem>
+                      <SelectItem value="Female">Female</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+              </Select>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Registering..." : "Register"}
               </Button>

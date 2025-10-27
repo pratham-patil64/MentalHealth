@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { db } from "@/firebase";
+import { db, auth } from "@/firebase"; // Import auth
 import { collection, getDocs } from "firebase/firestore";
+import { signOut } from "firebase/auth"; // Import signOut
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,13 +10,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Search, 
-  Filter, 
-  FileText, 
-  AlertTriangle, 
-  TrendingUp, 
-  Users, 
+import {
+  Search,
+  Filter,
+  FileText,
+  AlertTriangle,
+  TrendingUp,
+  Users,
   Heart,
   Brain,
   ArrowLeft,
@@ -23,20 +24,28 @@ import {
   LogOut
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { Student } from "./StudentDashboard"; // Import the Student interface
 
 const TeacherDashboard = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClass, setSelectedClass] = useState("all");
   const [selectedDivision, setSelectedDivision] = useState("all");
-  const [selectedStudent, setSelectedStudent] = useState(null);
-  const [checkins, setCheckins] = useState([]);
-  const [students, setStudents] = useState<any[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [checkins, setCheckins] = useState<any[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
 
   useEffect(() => {
     const fetchStudents = async () => {
       const querySnapshot = await getDocs(collection(db, "students"));
-      setStudents(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const studentData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
+      // Sort students: negative status first
+      studentData.sort((a, b) => {
+        if (a.mentalHealthStatus === 'negative' && b.mentalHealthStatus !== 'negative') return -1;
+        if (a.mentalHealthStatus !== 'negative' && b.mentalHealthStatus === 'negative') return 1;
+        return 0;
+      });
+      setStudents(studentData);
     };
     fetchStudents();
   }, []);
@@ -76,6 +85,20 @@ const TeacherDashboard = () => {
     }
   };
 
+  const getPhq9Badge = (score: number) => {
+    if (score >= 20) {
+        return <Badge className="bg-red-200 text-red-800">Severe ({score})</Badge>;
+    } else if (score >= 15) {
+        return <Badge className="bg-orange-200 text-orange-800">Moderately Severe ({score})</Badge>;
+    } else if (score >= 10) {
+        return <Badge className="bg-yellow-200 text-yellow-800">Moderate ({score})</Badge>;
+    } else if (score >= 5) {
+        return <Badge className="bg-blue-200 text-blue-800">Mild ({score})</Badge>;
+    } else {
+        return <Badge className="bg-green-200 text-green-800">Minimal ({score})</Badge>;
+    }
+  };
+
   const getSentimentBadge = (sentiment: string) => {
     switch (sentiment) {
       case "positive":
@@ -93,8 +116,8 @@ const TeacherDashboard = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               onClick={() => navigate("/")}
               className="text-muted-foreground hover:text-primary"
             >
@@ -135,7 +158,7 @@ const TeacherDashboard = () => {
             <CardContent>
               <div className="text-2xl font-bold text-green-600">{positiveStudents}</div>
               <p className="text-xs text-muted-foreground">
-                {Math.round((positiveStudents / totalStudents) * 100)}% of total
+                {totalStudents > 0 ? Math.round((positiveStudents / totalStudents) * 100) : 0}% of total
               </p>
             </CardContent>
           </Card>
@@ -148,7 +171,7 @@ const TeacherDashboard = () => {
             <CardContent>
               <div className="text-2xl font-bold text-orange-600">{negativeStudents}</div>
               <p className="text-xs text-muted-foreground">
-                {Math.round((negativeStudents / totalStudents) * 100)}% of total
+                {totalStudents > 0 ? Math.round((negativeStudents / totalStudents) * 100) : 0}% of total
               </p>
             </CardContent>
           </Card>
@@ -218,7 +241,7 @@ const TeacherDashboard = () => {
                     <TableHead>Student Name</TableHead>
                     <TableHead>Class</TableHead>
                     <TableHead>Division</TableHead>
-                    <TableHead>Gender</TableHead>
+                    <TableHead>PHQ-9 Score</TableHead>
                     <TableHead>Mental Health Status</TableHead>
                     <TableHead>Reports</TableHead>
                     <TableHead>Last Essay</TableHead>
@@ -227,11 +250,11 @@ const TeacherDashboard = () => {
                 </TableHeader>
                 <TableBody>
                   {filteredStudents.map((student) => (
-                    <TableRow key={student.id}>
+                    <TableRow key={student.uid}>
                       <TableCell className="font-medium">{student.name}</TableCell>
                       <TableCell>{student.class}</TableCell>
                       <TableCell>{student.division}</TableCell>
-                      <TableCell>{student.gender}</TableCell>
+                      <TableCell>{student.phq9Score ? getPhq9Badge(student.phq9Score) : "N/A"}</TableCell>
                       <TableCell>{getStatusBadge(student.mentalHealthStatus)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -245,8 +268,8 @@ const TeacherDashboard = () => {
                       <TableCell>
                         <Dialog>
                           <DialogTrigger asChild>
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
                               onClick={() => setSelectedStudent(student)}
                             >
@@ -254,11 +277,12 @@ const TeacherDashboard = () => {
                               View Reports
                             </Button>
                           </DialogTrigger>
+                          {selectedStudent && (
                           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
                             <DialogHeader>
-                              <DialogTitle>Student Reports - {student.name}</DialogTitle>
+                              <DialogTitle>Student Reports - {selectedStudent.name}</DialogTitle>
                               <DialogDescription>
-                                Class {student.class}{student.division} • {student.reportsCount} total reports
+                                Class {selectedStudent.class}{selectedStudent.division} • {selectedStudent.reportsCount} total reports
                               </DialogDescription>
                             </DialogHeader>
                             
@@ -269,7 +293,7 @@ const TeacherDashboard = () => {
                               </TabsList>
                               
                               <TabsContent value="essays" className="space-y-4">
-                                {student.essays.map((essay) => (
+                                {(selectedStudent as any).essays?.map((essay: any) => (
                                   <Card key={essay.id}>
                                     <CardHeader>
                                       <div className="flex items-center justify-between">
@@ -295,18 +319,24 @@ const TeacherDashboard = () => {
                                     <CardTitle>Mental Health Summary</CardTitle>
                                   </CardHeader>
                                   <CardContent className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-3 gap-4">
                                       <div>
                                         <label className="text-sm font-medium">Overall Status</label>
                                         <div className="mt-1">
-                                          {getStatusBadge(student.mentalHealthStatus)}
+                                          {getStatusBadge(selectedStudent.mentalHealthStatus)}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <label className="text-sm font-medium">PHQ-9 Score</label>
+                                        <div className="mt-1">
+                                          {selectedStudent.phq9Score ? getPhq9Badge(selectedStudent.phq9Score) : <Badge>Not Taken</Badge>}
                                         </div>
                                       </div>
                                       <div>
                                         <label className="text-sm font-medium">Needs Emergency Help</label>
                                         <div className="mt-1">
-                                          <Badge className={student.needsHelp ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}>
-                                            {student.needsHelp ? "Yes" : "No"}
+                                          <Badge className={selectedStudent.needsHelp ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}>
+                                            {selectedStudent.needsHelp ? "Yes" : "No"}
                                           </Badge>
                                         </div>
                                       </div>
@@ -315,7 +345,7 @@ const TeacherDashboard = () => {
                                     <div>
                                       <label className="text-sm font-medium">Recommendations</label>
                                       <div className="mt-2 p-4 bg-muted rounded-lg">
-                                        {student.needsHelp ? (
+                                        {selectedStudent.needsHelp ? (
                                           <div className="space-y-2">
                                             <p className="text-sm">⚠️ <strong>Immediate attention required</strong></p>
                                             <p className="text-sm">• Schedule one-on-one counseling session</p>
@@ -336,6 +366,7 @@ const TeacherDashboard = () => {
                               </TabsContent>
                             </Tabs>
                           </DialogContent>
+                          )}
                         </Dialog>
                       </TableCell>
                     </TableRow>
@@ -373,8 +404,8 @@ const TeacherDashboard = () => {
           <Button
             variant="ghost"
             className="flex items-center gap-2"
-            onClick={() => {
-              // Optionally clear auth state here
+            onClick={async () => {
+              await signOut(auth);
               navigate("/teacher-login");
             }}
           >
