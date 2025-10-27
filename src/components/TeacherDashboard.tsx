@@ -38,7 +38,14 @@ const TeacherDashboard = () => {
   useEffect(() => {
     const fetchStudents = async () => {
       const querySnapshot = await getDocs(collection(db, "students"));
-      const studentData = querySnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as unknown as Student));
+      const studentData = querySnapshot.docs.map(doc => {
+        // Add mock data for anxiety and stress for demonstration
+        const data = doc.data();
+        data.anxietyScore = Math.floor(Math.random() * 21); // Random score between 0-20
+        data.stressScore = Math.floor(Math.random() * 21); // Random score between 0-20
+        return { uid: doc.id, ...data } as unknown as Student
+      });
+      
       // Sort students: negative status first
       studentData.sort((a, b) => {
         if (a.mentalHealthStatus === 'negative' && b.mentalHealthStatus !== 'negative') return -1;
@@ -85,15 +92,15 @@ const TeacherDashboard = () => {
     }
   };
 
-  const getPhq9Badge = (score: number) => {
-    if (score >= 20) {
+  const getScoreBadge = (score: number | undefined, type: 'depression' | 'anxiety' | 'stress') => {
+    if (score === undefined) return <Badge>N/A</Badge>;
+
+    if (score >= 15) {
         return <Badge className="bg-red-200 text-red-800">Severe ({score})</Badge>;
-    } else if (score >= 15) {
-        return <Badge className="bg-orange-200 text-orange-800">Moderately Severe ({score})</Badge>;
     } else if (score >= 10) {
-        return <Badge className="bg-yellow-200 text-yellow-800">Moderate ({score})</Badge>;
+        return <Badge className="bg-orange-200 text-orange-800">Moderate ({score})</Badge>;
     } else if (score >= 5) {
-        return <Badge className="bg-blue-200 text-blue-800">Mild ({score})</Badge>;
+        return <Badge className="bg-yellow-200 text-yellow-800">Mild ({score})</Badge>;
     } else {
         return <Badge className="bg-green-200 text-green-800">Minimal ({score})</Badge>;
     }
@@ -240,11 +247,10 @@ const TeacherDashboard = () => {
                   <TableRow>
                     <TableHead>Student Name</TableHead>
                     <TableHead>Class</TableHead>
-                    <TableHead>Division</TableHead>
-                    <TableHead>PHQ-9 Score</TableHead>
-                    <TableHead>Mental Health Status</TableHead>
-                    <TableHead>Reports</TableHead>
-                    <TableHead>Last Essay</TableHead>
+                    <TableHead>Depression (PHQ-9)</TableHead>
+                    <TableHead>Anxiety</TableHead>
+                    <TableHead>Stress</TableHead>
+                    <TableHead>Overall Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -252,19 +258,11 @@ const TeacherDashboard = () => {
                   {filteredStudents.map((student) => (
                     <TableRow key={student.uid}>
                       <TableCell className="font-medium">{student.name}</TableCell>
-                      <TableCell>{student.class}</TableCell>
-                      <TableCell>{student.division}</TableCell>
-                      <TableCell>{student.phq9Score ? getPhq9Badge(student.phq9Score) : "N/A"}</TableCell>
+                      <TableCell>{student.class}{student.division}</TableCell>
+                      <TableCell>{getScoreBadge(student.phq9Score, 'depression')}</TableCell>
+                      <TableCell>{getScoreBadge(student.anxietyScore, 'anxiety')}</TableCell>
+                      <TableCell>{getScoreBadge(student.stressScore, 'stress')}</TableCell>
                       <TableCell>{getStatusBadge(student.mentalHealthStatus)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span>{student.reportsCount}</span>
-                          {student.needsHelp && (
-                            <AlertTriangle className="w-4 h-4 text-red-500" />
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{student.lastEssayDate}</TableCell>
                       <TableCell>
                         <Dialog>
                           <DialogTrigger asChild>
@@ -274,7 +272,7 @@ const TeacherDashboard = () => {
                               onClick={() => setSelectedStudent(student)}
                             >
                               <FileText className="w-4 h-4 mr-2" />
-                              View Reports
+                              View Details
                             </Button>
                           </DialogTrigger>
                           {selectedStudent && (
@@ -286,12 +284,62 @@ const TeacherDashboard = () => {
                               </DialogDescription>
                             </DialogHeader>
                             
-                            <Tabs defaultValue="essays" className="w-full">
+                            <Tabs defaultValue="analysis" className="w-full">
                               <TabsList className="grid w-full grid-cols-2">
-                                <TabsTrigger value="essays">Essays & Journals</TabsTrigger>
                                 <TabsTrigger value="analysis">Mental Health Analysis</TabsTrigger>
+                                <TabsTrigger value="essays">Essays & Journals</TabsTrigger>
                               </TabsList>
                               
+                              <TabsContent value="analysis" className="space-y-4">
+                                <Card>
+                                  <CardHeader>
+                                    <CardTitle>Mental Health Summary</CardTitle>
+                                  </CardHeader>
+                                  <CardContent className="space-y-4">
+                                    <div className="grid grid-cols-3 gap-4">
+                                      <div>
+                                        <label className="text-sm font-medium">Depression (PHQ-9)</label>
+                                        <div className="mt-1">
+                                          {getScoreBadge(selectedStudent.phq9Score, 'depression')}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <label className="text-sm font-medium">Anxiety Score</label>
+                                        <div className="mt-1">
+                                          {getScoreBadge(selectedStudent.anxietyScore, 'anxiety')}
+                                        </div>
+                                      </div>
+                                       <div>
+                                        <label className="text-sm font-medium">Stress Score</label>
+                                        <div className="mt-1">
+                                          {getScoreBadge(selectedStudent.stressScore, 'stress')}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    <div>
+                                      <label className="text-sm font-medium">Recommendations</label>
+                                      <div className="mt-2 p-4 bg-muted rounded-lg">
+                                        {selectedStudent.needsHelp ? (
+                                          <div className="space-y-2">
+                                            <p className="text-sm">⚠️ <strong>Immediate attention required</strong></p>
+                                            <p className="text-sm">• Schedule one-on-one counseling session</p>
+                                            <p className="text-sm">• Contact parents/guardians</p>
+                                            <p className="text-sm">• Monitor daily check-ins</p>
+                                          </div>
+                                        ) : (
+                                          <div className="space-y-2">
+                                            <p className="text-sm">✅ <strong>Student is showing positive signs</strong></p>
+                                            <p className="text-sm">• Continue regular monitoring</p>
+                                            <p className="text-sm">• Encourage continued journaling</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              </TabsContent>
+
                               <TabsContent value="essays" className="space-y-4">
                                 {(selectedStudent as any).essays?.map((essay: any) => (
                                   <Card key={essay.id}>
@@ -312,58 +360,7 @@ const TeacherDashboard = () => {
                                   </Card>
                                 ))}
                               </TabsContent>
-                              
-                              <TabsContent value="analysis" className="space-y-4">
-                                <Card>
-                                  <CardHeader>
-                                    <CardTitle>Mental Health Summary</CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="space-y-4">
-                                    <div className="grid grid-cols-3 gap-4">
-                                      <div>
-                                        <label className="text-sm font-medium">Overall Status</label>
-                                        <div className="mt-1">
-                                          {getStatusBadge(selectedStudent.mentalHealthStatus)}
-                                        </div>
-                                      </div>
-                                      <div>
-                                        <label className="text-sm font-medium">PHQ-9 Score</label>
-                                        <div className="mt-1">
-                                          {selectedStudent.phq9Score ? getPhq9Badge(selectedStudent.phq9Score) : <Badge>Not Taken</Badge>}
-                                        </div>
-                                      </div>
-                                      <div>
-                                        <label className="text-sm font-medium">Needs Emergency Help</label>
-                                        <div className="mt-1">
-                                          <Badge className={selectedStudent.needsHelp ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}>
-                                            {selectedStudent.needsHelp ? "Yes" : "No"}
-                                          </Badge>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    
-                                    <div>
-                                      <label className="text-sm font-medium">Recommendations</label>
-                                      <div className="mt-2 p-4 bg-muted rounded-lg">
-                                        {selectedStudent.needsHelp ? (
-                                          <div className="space-y-2">
-                                            <p className="text-sm">⚠️ <strong>Immediate attention required</strong></p>
-                                            <p className="text-sm">• Schedule one-on-one counseling session</p>
-                                            <p className="text-sm">• Contact parents/guardians</p>
-                                            <p className="text-sm">• Monitor daily check-ins</p>
-                                          </div>
-                                        ) : (
-                                          <div className="space-y-2">
-                                            <p className="text-sm">✅ <strong>Student showing positive mental health signs</strong></p>
-                                            <p className="text-sm">• Continue regular monitoring</p>
-                                            <p className="text-sm">• Encourage continued journaling</p>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              </TabsContent>
+
                             </Tabs>
                           </DialogContent>
                           )}
@@ -377,30 +374,8 @@ const TeacherDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Student Check-ins */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Student Check-ins</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2">
-              {checkins.map((checkin: any) => (
-                <li key={checkin.id} className="flex justify-between items-center p-4 bg-muted rounded-lg">
-                  <div>
-                    <strong>{checkin.studentEmail}</strong>
-                    <p className="text-sm text-muted-foreground">{checkin.mood}</p>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {checkin.createdAt?.toDate?.().toLocaleString?.()}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-
         {/* Logout Button */}
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-4">
           <Button
             variant="ghost"
             className="flex items-center gap-2"

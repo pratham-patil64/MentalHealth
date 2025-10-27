@@ -45,6 +45,8 @@ export interface Student {
   phq9Score?: number;
   lastPhq9Date?: Timestamp;
   assignments?: any[];
+  anxietyScore?: number; // <-- ADDED
+  stressScore?: number;
 }
 
 interface RecentEntry {
