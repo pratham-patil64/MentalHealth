@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { db, auth } from "@/firebase"; // Import auth
-import { collection, getDocs } from "firebase/firestore";
-import { signOut } from "firebase/auth"; // Import signOut
+import { db, auth } from "@/firebase";
+import { collection, getDocs } from "firebase/firestore"; // <-- THE FIX IS HERE
+import { signOut } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,10 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search,
-  Filter,
   FileText,
   AlertTriangle,
-  TrendingUp,
   Users,
   Heart,
   Brain,
@@ -26,27 +24,22 @@ import {
 import { useNavigate } from "react-router-dom";
 import { Student } from "./StudentDashboard"; // Import the Student interface
 
+// ... (the rest of the file remains exactly the same) ...
 const TeacherDashboard = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClass, setSelectedClass] = useState("all");
   const [selectedDivision, setSelectedDivision] = useState("all");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [checkins, setCheckins] = useState<any[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
 
   useEffect(() => {
     const fetchStudents = async () => {
       const querySnapshot = await getDocs(collection(db, "students"));
       const studentData = querySnapshot.docs.map(doc => {
-        // Add mock data for anxiety and stress for demonstration
-        const data = doc.data();
-        data.anxietyScore = Math.floor(Math.random() * 21); // Random score between 0-20
-        data.stressScore = Math.floor(Math.random() * 21); // Random score between 0-20
-        return { uid: doc.id, ...data } as unknown as Student
+        return { uid: doc.id, ...doc.data() } as Student
       });
       
-      // Sort students: negative status first
       studentData.sort((a, b) => {
         if (a.mentalHealthStatus === 'negative' && b.mentalHealthStatus !== 'negative') return -1;
         if (a.mentalHealthStatus !== 'negative' && b.mentalHealthStatus === 'negative') return 1;
@@ -57,15 +50,6 @@ const TeacherDashboard = () => {
     fetchStudents();
   }, []);
 
-  useEffect(() => {
-    const fetchCheckins = async () => {
-      const querySnapshot = await getDocs(collection(db, "checkins"));
-      setCheckins(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    };
-    fetchCheckins();
-  }, []);
-
-  // Filter students based on search and filters
   const filteredStudents = students.filter(student => {
     const matchesSearch = student.name?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesClass = selectedClass === "all" || student.class === selectedClass;
@@ -73,7 +57,6 @@ const TeacherDashboard = () => {
     return matchesSearch && matchesClass && matchesDivision;
   });
 
-  // Calculate statistics
   const totalStudents = students.length;
   const maleStudents = students.filter(s => s.gender === "Male").length;
   const femaleStudents = students.filter(s => s.gender === "Female").length;
@@ -92,14 +75,14 @@ const TeacherDashboard = () => {
     }
   };
 
-  const getScoreBadge = (score: number | undefined, type: 'depression' | 'anxiety' | 'stress') => {
-    if (score === undefined) return <Badge>N/A</Badge>;
+  const getScoreBadge = (score: number | undefined) => {
+    if (score === undefined || score === null) return <Badge>N/A</Badge>;
 
-    if (score >= 15) {
-        return <Badge className="bg-red-200 text-red-800">Severe ({score})</Badge>;
-    } else if (score >= 10) {
+    if (score >= 3) {
+        return <Badge className="bg-red-200 text-red-800">High ({score})</Badge>;
+    } else if (score >= 2) {
         return <Badge className="bg-orange-200 text-orange-800">Moderate ({score})</Badge>;
-    } else if (score >= 5) {
+    } else if (score >= 1) {
         return <Badge className="bg-yellow-200 text-yellow-800">Mild ({score})</Badge>;
     } else {
         return <Badge className="bg-green-200 text-green-800">Minimal ({score})</Badge>;
@@ -247,7 +230,7 @@ const TeacherDashboard = () => {
                   <TableRow>
                     <TableHead>Student Name</TableHead>
                     <TableHead>Class</TableHead>
-                    <TableHead>Depression (PHQ-9)</TableHead>
+                    <TableHead>Depression</TableHead>
                     <TableHead>Anxiety</TableHead>
                     <TableHead>Stress</TableHead>
                     <TableHead>Overall Status</TableHead>
@@ -259,9 +242,9 @@ const TeacherDashboard = () => {
                     <TableRow key={student.uid}>
                       <TableCell className="font-medium">{student.name}</TableCell>
                       <TableCell>{student.class}{student.division}</TableCell>
-                      <TableCell>{getScoreBadge(student.phq9Score, 'depression')}</TableCell>
-                      <TableCell>{getScoreBadge(student.anxietyScore, 'anxiety')}</TableCell>
-                      <TableCell>{getScoreBadge(student.stressScore, 'stress')}</TableCell>
+                      <TableCell>{getScoreBadge(student.depressionScore)}</TableCell>
+                      <TableCell>{getScoreBadge(student.anxietyScore)}</TableCell>
+                      <TableCell>{getScoreBadge(student.stressScore)}</TableCell>
                       <TableCell>{getStatusBadge(student.mentalHealthStatus)}</TableCell>
                       <TableCell>
                         <Dialog>
@@ -280,7 +263,7 @@ const TeacherDashboard = () => {
                             <DialogHeader>
                               <DialogTitle>Student Reports - {selectedStudent.name}</DialogTitle>
                               <DialogDescription>
-                                Class {selectedStudent.class}{selectedStudent.division} • {selectedStudent.reportsCount} total reports
+                                Class {selectedStudent.class}{selectedStudent.division} • {selectedStudent.reportsCount || 0} total reports
                               </DialogDescription>
                             </DialogHeader>
                             
@@ -298,21 +281,21 @@ const TeacherDashboard = () => {
                                   <CardContent className="space-y-4">
                                     <div className="grid grid-cols-3 gap-4">
                                       <div>
-                                        <label className="text-sm font-medium">Depression (PHQ-9)</label>
+                                        <label className="text-sm font-medium">Depression</label>
                                         <div className="mt-1">
-                                          {getScoreBadge(selectedStudent.phq9Score, 'depression')}
+                                          {getScoreBadge(selectedStudent.depressionScore)}
                                         </div>
                                       </div>
                                       <div>
                                         <label className="text-sm font-medium">Anxiety Score</label>
                                         <div className="mt-1">
-                                          {getScoreBadge(selectedStudent.anxietyScore, 'anxiety')}
+                                          {getScoreBadge(selectedStudent.anxietyScore)}
                                         </div>
                                       </div>
                                        <div>
                                         <label className="text-sm font-medium">Stress Score</label>
                                         <div className="mt-1">
-                                          {getScoreBadge(selectedStudent.stressScore, 'stress')}
+                                          {getScoreBadge(selectedStudent.stressScore)}
                                         </div>
                                       </div>
                                     </div>
