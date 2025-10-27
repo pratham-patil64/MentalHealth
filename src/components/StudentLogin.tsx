@@ -4,21 +4,72 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Heart, Mail, Lock, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { auth } from "@/firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth, db } from "@/firebase";
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
-const StudentLogin = () => {
+interface StudentLoginProps {
+  onGoogleLoginSuccess: (token: string) => void;
+}
+
+const StudentLogin = ({ onGoogleLoginSuccess }: StudentLoginProps) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate("/student-dashboard");
+      // Let the onAuthStateChanged listener in App.tsx handle navigation
     } catch (error: any) {
       alert(error.message);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    const provider = new GoogleAuthProvider();
+    // Add scopes for Fit and Classroom APIs
+    provider.addScope('https://www.googleapis.com/auth/fitness.activity.read');
+    provider.addScope('https://www.googleapis.com/auth/fitness.sleep.read');
+    provider.addScope('https://www.googleapis.com/auth/fitness.heart_rate.read');
+    provider.addScope('https://www.googleapis.com/auth/fitness.body.read');
+    provider.addScope('https://www.googleapis.com/auth/classroom.courses.readonly');
+    provider.addScope('https://www.googleapis.com/auth/classroom.coursework.me.readonly');
+
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      // Get the OAuth access token from the result
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const accessToken = credential?.accessToken;
+
+      if (accessToken) {
+        // Pass the token up to App.tsx
+        onGoogleLoginSuccess(accessToken);
+
+        // Check if user exists in Firestore, if not, create them (Sign-Up)
+        const userDocRef = doc(db, "students", user.uid);
+        const docSnap = await getDoc(userDocRef);
+
+        if (!docSnap.exists()) {
+          await setDoc(userDocRef, {
+            uid: user.uid,
+            email: user.email,
+            name: user.displayName,
+            profilePicUrl: user.photoURL,
+            mentalHealthStatus: "neutral",
+            reportsCount: 0,
+            needsHelp: false,
+            lastEssayDate: "",
+          });
+        }
+        // Navigation will be handled by onAuthStateChanged in App.tsx
+      }
+    } catch (error: any) {
+      console.error("Google Sign-In Error:", error);
+      alert(`Google Sign-In Failed: ${error.message}`);
     }
   };
 
@@ -41,11 +92,24 @@ const StudentLogin = () => {
             </div>
             <CardTitle className="text-3xl text-foreground">Student Portal</CardTitle>
             <CardDescription className="text-lg">
-              Welcome back! Please sign in to access your wellness dashboard.
+              Sign in to access your wellness dashboard.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-6">
+            <Button onClick={handleGoogleSignIn} className="w-full" size="lg">
+                Sign in with Google
+            </Button>
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">
+                  Or continue with
+                </span>
+              </div>
+            </div>
+            <form onSubmit={handleEmailLogin} className="space-y-6">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Email</label>
                 <div className="relative">
@@ -80,26 +144,14 @@ const StudentLogin = () => {
                 Sign In 
               </Button>
               
-              <div className="text-center space-y-4">
-                <Button variant="link" className="text-primary">
-                  Forgot your password?
-                </Button>
+              <div className="mt-4 text-center text-sm">
                 <Button variant="link" onClick={() => navigate("/student-register")}>
-                  New student? Register here
+                  Don't have an account? Sign up
                 </Button>
-                <p className="text-sm text-muted-foreground">
-                  Need help? Contact your school's IT support
-                </p>
               </div>
             </form>
           </CardContent>
         </Card>
-        
-        <div className="mt-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Your privacy and safety are our top priorities. All conversations and data are confidential.
-          </p>
-        </div>
       </div>
     </div>
   );

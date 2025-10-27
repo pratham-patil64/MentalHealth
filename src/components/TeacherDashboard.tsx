@@ -38,7 +38,7 @@ const TeacherDashboard = () => {
   useEffect(() => {
     const fetchStudents = async () => {
       const querySnapshot = await getDocs(collection(db, "students"));
-      const studentData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
+      const studentData = querySnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as unknown as Student));
       // Sort students: negative status first
       studentData.sort((a, b) => {
         if (a.mentalHealthStatus === 'negative' && b.mentalHealthStatus !== 'negative') return -1;

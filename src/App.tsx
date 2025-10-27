@@ -2,7 +2,7 @@ import { useEffect, useState, ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/firebase";
-import { GoogleOAuthProvider } from '@react-oauth/google'; // Import the provider
+import { GoogleOAuthProvider } from '@react-oauth/google';
 
 // UI and Provider Imports
 import { Toaster } from "@/components/ui/toaster";
@@ -33,6 +33,7 @@ const ProtectedRoute = ({ user, children, redirectTo = "/student-login" }: { use
 const AppRoutes = () => {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [googleToken, setGoogleToken] = useState<string | null>(null); // State for Google Token
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -46,8 +47,20 @@ const AppRoutes = () => {
       }
     });
 
+    // Retrieve token from session storage on component mount
+    const storedToken = sessionStorage.getItem('googleAccessToken');
+    if (storedToken) {
+        setGoogleToken(storedToken);
+    }
+
     return () => unsubscribe();
   }, [navigate, location.pathname]);
+
+  const handleGoogleLoginSuccess = (token: string) => {
+    setGoogleToken(token);
+    sessionStorage.setItem('googleAccessToken', token); // Store token in session storage
+    navigate("/student-dashboard");
+  };
 
   if (authLoading) {
     return <div className="flex h-screen w-full items-center justify-center">Authenticating...</div>;
@@ -56,7 +69,7 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/" element={<Index />} />
-      <Route path="/student-login" element={<StudentLogin />} />
+      <Route path="/student-login" element={<StudentLogin onGoogleLoginSuccess={handleGoogleLoginSuccess} />} />
       <Route path="/teacher-login" element={<TeacherLogin />} />
       <Route path="/student-register" element={<StudentRegister />} />
       
@@ -64,7 +77,7 @@ const AppRoutes = () => {
         path="/student-dashboard"
         element={
           <ProtectedRoute user={authUser} redirectTo="/student-login">
-            {authUser && <StudentDashboard user={authUser} />}
+            {authUser && <StudentDashboard user={authUser} googleAccessToken={googleToken} />}
           </ProtectedRoute>
         }
       />
@@ -85,7 +98,6 @@ const AppRoutes = () => {
 
 // Main App component
 const App = () => (
-  // Wrap the entire app with GoogleOAuthProvider
   <GoogleOAuthProvider clientId="162276798485-j874m3oenarvot0qpemr4k14to8kd0fh.apps.googleusercontent.com">
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
