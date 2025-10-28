@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+// StudentDashboard.tsx
+
+import { useState, useEffect, useCallback } from "react";
 import { auth, db } from "@/firebase";
 import GoogleFit from "./GoogleFit";
 import GoogleClassroom from "./GoogleClassroom";
@@ -12,6 +14,7 @@ import {
   limit,
   getDocs,
   Timestamp,
+  setDoc,
 } from "firebase/firestore";
 import { signOut, User } from "firebase/auth";
 import { Button } from "@/components/ui/button";
@@ -25,6 +28,7 @@ import ProfilePage from "./ProfilePage";
 import Journal from "./Journal";
 import WeeklyCheckinChat from "./WeeklyCheckinChat";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { BehavioralScores } from "@/lib/healthCalculations";
 
 export interface Student {
   uid: string;
@@ -41,6 +45,7 @@ export interface Student {
   reportsCount: number;
   needsHelp: boolean;
   lastEssayDate: string;
+  // Unified scores, 0-100, lower is better
   anxietyScore?: number;
   stressScore?: number;
   depressionScore?: number;
@@ -75,6 +80,7 @@ const calmingExercises = [
 const StudentDashboard = ({ user, googleAccessToken }: StudentDashboardProps) => {
     const [studentData, setStudentData] = useState<Student | null>(null);
     const [loading, setLoading] = useState(true);
+    const [behavioralScores, setBehavioralScores] = useState<BehavioralScores | null>(null);
     const [isGeneralChatOpen, setIsGeneralChatOpen] = useState(false);
     const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
     const [view, setView] = useState<"dashboard" | "profile">("dashboard");
@@ -87,92 +93,148 @@ const StudentDashboard = ({ user, googleAccessToken }: StudentDashboardProps) =>
 
     const getWeekBoundaries = (date: Date) => {
         const d = new Date(date);
-        const day = d.getDay();
-        const diffToMonday = d.getDate() - day + (day === 0 ? -6 : 1);
-        const monday = new Date(d.setDate(diffToMonday));
-        monday.setHours(0, 0, 0, 0);
-
+        const day = d.getDay(), diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(d.setDate(diff));
+        monday.setHours(0,0,0,0);
         const sunday = new Date(monday);
         sunday.setDate(monday.getDate() + 6);
-        sunday.setHours(23, 59, 59, 999);
-
+        sunday.setHours(23,59,59,999);
         return { start: Timestamp.fromDate(monday), end: Timestamp.fromDate(sunday) };
     }
 
-const fetchStudentData = async () => {
-  if (!user) return;
-  setLoading(true);
-  try {
-    const docRef = doc(db, "students", user.uid);
-    const docSnap = await getDoc(docRef);
-    let currentStudentData: Student | null = null;
+    const fetchStudentData = useCallback(async () => {
+        if (!user) return;
+        setLoading(true);
+        try {
+            const docRef = doc(db, "students", user.uid);
+            const docSnap = await getDoc(docRef);
+            let currentStudentData: Student | null = null;
 
-    if (docSnap.exists()) {
-      const data = docSnap.data() as any; // Use 'any' to handle flexible data shape
-      
-      // Check for a nested 'scores' object first, otherwise use top-level fields
-      const scores = data.scores || {};
+            if (docSnap.exists()) {
+                const data = docSnap.data() as any;
+                // This logic correctly reads scores from the top level OR a nested 'scores' object
+                const scores = data.scores || {};
+                currentStudentData = {
+                    ...data,
+                    depressionScore: scores.depression ?? data.depressionScore,
+                    anxietyScore: scores.anxiety ?? data.anxietyScore,
+                    stressScore: scores.stress ?? data.stressScore,
+                } as Student;
+                
+                setStudentData(currentStudentData);
 
-      currentStudentData = {
-        ...data,
-        depressionScore: scores.depression ?? data.depressionScore ?? 0,
-        anxietyScore: scores.anxiety ?? data.anxietyScore ?? 0,
-        stressScore: scores.stress ?? data.stressScore ?? 0,
-      } as Student;
+                if (!currentStudentData.school || !currentStudentData.parentPhone || !currentStudentData.class) {
+                    setView("profile");
+                } else {
+                    setView("dashboard");
+                }
+            } else {
+                setView("profile");
+            }
+            const { start, end } = getWeekBoundaries(new Date());
+            const qChats = query(collection(db, "weeklyChats"), where("studentUid", "==", user.uid), where("chatDate", ">=", start), where("chatDate", "<=", end));
+            const chatSnapshot = await getDocs(qChats);
+            setHasChattedThisWeek(!chatSnapshot.empty);
 
-      setStudentData(currentStudentData);
+            if (currentStudentData?.school) {
+                const qJournals = query(collection(db, "journalEntries"), where("studentUid", "==", user.uid), orderBy("timestamp", "desc"), limit(3));
+                const querySnapshot = await getDocs(qJournals);
+                setRecentEntries(querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as RecentEntry)));
+            }
+        } catch (error) { console.error("ERROR fetching data:", error); } 
+        finally { setLoading(false); }
+    }, [user]);
 
-      if (
-        !currentStudentData.school ||
-        !currentStudentData.parentPhone ||
-        !currentStudentData.class
-      ) {
-        setView("profile");
-      } else {
-        setView("dashboard");
-      }
-    } else {
-      setView("profile");
-    }
+    useEffect(() => { fetchStudentData(); }, [fetchStudentData]);
 
-    const { start, end } = getWeekBoundaries(new Date());
-    const qChats = query(
-      collection(db, "weeklyChats"),
-      where("studentUid", "==", user.uid),
-      where("chatDate", ">=", start),
-      where("chatDate", "<=", end)
-    );
-    const chatSnapshot = await getDocs(qChats);
-    setHasChattedThisWeek(!chatSnapshot.empty);
+    // --- Unified Scoring Function ---
+    const calculateAndSaveUnifiedScores = useCallback(async () => {
+        if (!user) return;
 
-    if (currentStudentData?.school) {
-      const qJournals = query(
-        collection(db, "journalEntries"),
-        where("studentUid", "==", user.uid),
-        orderBy("timestamp", "desc"),
-        limit(3)
-      );
-      const querySnapshot = await getDocs(qJournals);
-      setRecentEntries(
-        querySnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() } as RecentEntry)
-        )
-      );
-    }
-  } catch (error) {
-    console.error("ERROR fetching data:", error);
-  } finally {
-    setLoading(false);
-  }
-};
+        // 1. Get Chat Data (fetch all "yes" counts for the month)
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        const monthlyChatsSnapshot = await getDocs(query(collection(db, "weeklyChats"), where("studentUid", "==", user.uid), where("chatDate", ">=", Timestamp.fromDate(startOfMonth)), where("chatDate", "<=", Timestamp.fromDate(endOfMonth))));
+        
+        let totalAnxietyYes = 0, totalDepressionYes = 0, totalStressYes = 0;
+        const chatCount = monthlyChatsSnapshot.size > 0 ? monthlyChatsSnapshot.size : 1;
+        
+        monthlyChatsSnapshot.docs.forEach((d) => {
+            const data = d.data();
+            if (data.anxietyResponses) totalAnxietyYes += data.anxietyResponses.filter(Boolean).length;
+            if (data.depressionResponses) totalDepressionYes += data.depressionResponses.filter(Boolean).length;
+            if (data.stressResponses) totalStressYes += data.stressResponses.filter(Boolean).length;
+        });
 
+        // 2. Get Google Fit Data (from state)
+        // behavioralScores has 100 as GOOD, 0 as BAD. Default to 50 if not available.
+        const activityScore = behavioralScores?.activityScore ?? 50;
+        const sleepScore = behavioralScores?.sleepScore ?? 50;
 
-    useEffect(() => { fetchStudentData(); }, [user]);
+        // 3. Unified Scoring Logic
+        // Convert all scores to "Factors" (0-100, where 100 is WORSE)
+        const sleepFactor = 100 - sleepScore;
+        const activityFactor = 100 - activityScore;
+
+        const avgAnxietyYes = totalAnxietyYes / chatCount;
+        const avgDepressionYes = totalDepressionYes / chatCount;
+        const avgStressYes = totalStressYes / chatCount;
+        
+        // Assuming max 5 "yes" answers per category per chat, convert to 0-100 scale
+        const anxietyChatFactor = Math.min(100, (avgAnxietyYes / 5) * 100);
+        const depressionChatFactor = Math.min(100, (avgDepressionYes / 5) * 100);
+        const stressChatFactor = Math.min(100, (avgStressYes / 5) * 100);
+
+        // Weighted averages: 60% self-reported (chat), 40% behavioral (Fit)
+        const finalAnxietyScore = Math.round((anxietyChatFactor * 0.6) + (sleepFactor * 0.4));
+        const finalDepressionScore = Math.round((depressionChatFactor * 0.6) + (activityFactor * 0.3) + (sleepFactor * 0.1));
+        const finalStressScore = Math.round((stressChatFactor * 0.6) + (sleepFactor * 0.2) + (activityFactor * 0.2));
+
+        // 4. Save to Firestore
+        const studentDocRef = doc(db, "students", user.uid);
+        await setDoc(studentDocRef, {
+            anxietyScore: finalAnxietyScore,
+            depressionScore: finalDepressionScore,
+            stressScore: finalStressScore,
+        }, { merge: true });
+
+        // Update local state immediately for responsiveness
+        setStudentData(prev => prev ? {
+            ...prev,
+            anxietyScore: finalAnxietyScore,
+            depressionScore: finalDepressionScore,
+            stressScore: finalStressScore,
+        } : null);
+        
+    }, [user, behavioralScores]); // Removed fetchStudentData from dependencies
+
+    // This effect triggers the calculation when Fit data arrives
+    useEffect(() => {
+        if (behavioralScores) {
+            calculateAndSaveUnifiedScores();
+        }
+    }, [behavioralScores, calculateAndSaveUnifiedScores]);
+
+    // This is the callback for GoogleFit, wrapped in useCallback to prevent re-renders
+    const handleScoresCalculated = useCallback((scores: BehavioralScores) => {
+        setBehavioralScores(scores);
+    }, []); // Empty dependency array means this function is stable and won't cause loops
     
+    // This triggers calculation after a chat
+    const handleCheckinComplete = () => {
+        setIsCheckinModalOpen(false);
+        // We call fetchStudentData first to ensure we have the latest chat,
+        // then recalculate.
+        fetchStudentData().then(() => {
+            calculateAndSaveUnifiedScores();
+        });
+    };
+
     useEffect(() => {
         let timer: NodeJS.Timeout;
         if (activeExercise && countdown > 0 && activeExercise.id !== '5-4-3-2-1-grounding') {
-            timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+            timer = setTimeout(() => setCountdown(c => c - 1), 1000);
         } else if (countdown === 0 && activeExercise && activeExercise.id !== '5-4-3-2-1-grounding') {
             setActiveExercise(null);
         }
@@ -180,21 +242,12 @@ const fetchStudentData = async () => {
     }, [countdown, activeExercise]);
 
     const startExercise = (exercise: (typeof calmingExercises)[0]) => {
-        setActiveExercise(exercise);
-        setIsExerciseModalOpen(true);
-        if (exercise.id === '5-4-3-2-1-grounding') {
-            setGroundingStep(0);
-        } else {
-            setCountdown(exercise.duration || 0);
-        }
+        setActiveExercise(exercise); setIsExerciseModalOpen(true);
+        if (exercise.id === '5-4-3-2-1-grounding') setGroundingStep(0);
+        else setCountdown(exercise.duration || 0);
     };
 
-    const stopExercise = () => {
-        setIsExerciseModalOpen(false);
-        setActiveExercise(null);
-        setCountdown(0);
-        setGroundingStep(0);
-    };
+    const stopExercise = () => { setIsExerciseModalOpen(false); setActiveExercise(null); setCountdown(0); setGroundingStep(0); };
     
     const generalChatUrl = "https://cdn.botpress.cloud/webchat/v3.2/shareable.html?configUrl=https://files.bpcontent.cloud/2025/04/16/16/20250416163745-EVAZ135S.json";
     const handleOpenGeneralChat = () => setIsGeneralChatOpen(true);
@@ -202,11 +255,9 @@ const fetchStudentData = async () => {
     
     const handleProfileUpdate = () => { fetchStudentData(); setView("dashboard"); };
     
-    const handleCheckinComplete = () => { setIsCheckinModalOpen(false); fetchStudentData(); };
-
     const GroundingIcon = activeExercise?.id === '5-4-3-2-1-grounding' ? groundingSteps[groundingStep].Icon : null;
 
-    if (loading) { return <div className="flex h-screen items-center justify-center bg-gradient-background"><p>Loading Dashboard...</p></div>; }
+    if (loading) return <div className="flex h-screen items-center justify-center bg-gradient-background"><p>Loading Dashboard...</p></div>;
 
     return (
         <>
@@ -214,21 +265,15 @@ const fetchStudentData = async () => {
                 <header className="bg-card/80 backdrop-blur-md border-b border-border sticky top-0 z-40">
                     <div className="container mx-auto px-6 py-4 flex justify-between items-center">
                         <div className="flex items-center space-x-4">
-                            <Avatar>
-                                <AvatarImage src={studentData?.profilePicUrl} alt={studentData?.name} />
-                                <AvatarFallback>{studentData?.name ? studentData.name.charAt(0).toUpperCase() : "S"}</AvatarFallback>
-                            </Avatar>
+                            <Avatar><AvatarImage src={studentData?.profilePicUrl} alt={studentData?.name} /><AvatarFallback>{studentData?.name ? studentData.name.charAt(0).toUpperCase() : "S"}</AvatarFallback></Avatar>
                             <div>
                                 <h1 className="text-2xl font-bold text-foreground">{view === 'profile' ? "Your Profile" : `Welcome, ${studentData?.name || "Student"}!`}</h1>
                                 <p className="text-muted-foreground">{view === 'profile' ? "Please keep your details up to date." : "How are you feeling today?"}</p>
                             </div>
                         </div>
                         <div className="flex items-center space-x-4">
-                            <Button variant="ghost" size="icon" onClick={() => setView(view === 'profile' ? 'dashboard' : 'profile')}>{view === 'profile' ? <ArrowLeft className="w-5 h-5" /> : <UserIcon className="w-5 h-5" />}</Button>
-                            <Button variant="ghost" size="icon" onClick={async () => {
-                                sessionStorage.removeItem('googleAccessToken');
-                                await signOut(auth);
-                            }}><LogOut className="w-5 h-5" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => setView(v => v === 'profile' ? 'dashboard' : 'profile')}>{view === 'profile' ? <ArrowLeft className="w-5 h-5" /> : <UserIcon className="w-5 h-5" />}</Button>
+                            <Button variant="ghost" size="icon" onClick={async () => { sessionStorage.removeItem('googleAccessToken'); await signOut(auth); }}><LogOut className="w-5 h-5" /></Button>
                         </div>
                     </div>
                 </header>
@@ -272,13 +317,13 @@ const fetchStudentData = async () => {
                                 
                                 <Card className="border-0 shadow-card bg-card/50 backdrop-blur-sm">
                                     <CardHeader>
-                                        <CardTitle className="text-2xl text-foreground flex items-center"><Brain className="w-6 h-6 mr-3 text-primary" />Your Monthly Scores</CardTitle>
-                                        <CardDescription>These scores are calculated from your weekly check-ins.</CardDescription>
+                                        <CardTitle className="text-2xl text-foreground flex items-center"><Brain className="w-6 h-6 mr-3 text-primary" />Your Unified Wellness Scores</CardTitle>
+                                        <CardDescription>Calculated from your check-ins and Google Fit data (Scores 0-100, lower is better).</CardDescription>
                                     </CardHeader>
                                     <CardContent className="grid grid-cols-3 gap-4 text-center">
-                                        <div className="p-4 bg-muted rounded-lg"><p className="text-sm text-muted-foreground">Depression</p><p className="text-3xl font-bold text-foreground">{studentData?.depressionScore ?? 'N/A'}</p></div>
-                                        <div className="p-4 bg-muted rounded-lg"><p className="text-sm text-muted-foreground">Anxiety</p><p className="text-3xl font-bold text-foreground">{studentData?.anxietyScore ?? 'N/A'}</p></div>
-                                        <div className="p-4 bg-muted rounded-lg"><p className="text-sm text-muted-foreground">Stress</p><p className="text-3xl font-bold text-foreground">{studentData?.stressScore ?? 'N/A'}</p></div>
+                                        <div className="p-4 bg-muted rounded-lg"><p className="text-sm text-muted-foreground">Depression</p><p className="text-3xl font-bold text-foreground">{studentData?.depressionScore ?? 'N/A'}<span className="text-lg text-muted-foreground">/100</span></p></div>
+                                        <div className="p-4 bg-muted rounded-lg"><p className="text-sm text-muted-foreground">Anxiety</p><p className="text-3xl font-bold text-foreground">{studentData?.anxietyScore ?? 'N/A'}<span className="text-lg text-muted-foreground">/100</span></p></div>
+                                        <div className="p-4 bg-muted rounded-lg"><p className="text-sm text-muted-foreground">Stress</p><p className="text-3xl font-bold text-foreground">{studentData?.stressScore ?? 'N/A'}<span className="text-lg text-muted-foreground">/100</span></p></div>
                                     </CardContent>
                                 </Card>
                                 
@@ -297,7 +342,7 @@ const fetchStudentData = async () => {
 
                                 <Card className="border-0 shadow-card bg-card/50 backdrop-blur-sm">
                                     <CardHeader><CardTitle className="text-2xl text-foreground flex items-center">Google Fit Data</CardTitle><CardDescription>Your activity and sleep patterns from Google Fit.</CardDescription></CardHeader>
-                                    <CardContent><GoogleFit accessToken={googleAccessToken} /></CardContent>
+                                    <CardContent><GoogleFit accessToken={googleAccessToken} onScoresCalculated={handleScoresCalculated}/></CardContent>
                                 </Card>
 
                                 <Card className="border-0 shadow-card bg-card/50 backdrop-blur-sm">
@@ -338,7 +383,6 @@ const fetchStudentData = async () => {
             
             <Dialog open={isCheckinModalOpen} onOpenChange={setIsCheckinModalOpen}>
                 <DialogContent className="max-w-lg p-0 border-0 bg-transparent">
-                    {/* FIX: Added accessible title and description */}
                     <DialogTitle className="sr-only">Weekly Check-in Chat</DialogTitle>
                     <DialogDescription className="sr-only">A guided chat to check on your mental well-being for the week.</DialogDescription>
                     <WeeklyCheckinChat user={user} onComplete={handleCheckinComplete} />
@@ -351,7 +395,6 @@ const fetchStudentData = async () => {
                 <DialogContent className="max-w-md text-center p-8">
                     {activeExercise && (
                         <>
-                            {/* FIX: Added accessible title and description */}
                             <DialogTitle className="sr-only">{activeExercise.title}</DialogTitle>
                             <DialogDescription className="sr-only">An interactive modal for the {activeExercise.title} calming exercise.</DialogDescription>
                             <div className={`mx-auto w-24 h-24 rounded-full ${activeExercise.color} flex items-center justify-center mb-4`}>
@@ -371,7 +414,7 @@ const fetchStudentData = async () => {
                                 </div>
                             )}
                             {activeExercise.id === '5-4-3-2-1-grounding' ? (
-                                <Button onClick={() => groundingStep < groundingSteps.length - 1 ? setGroundingStep(groundingStep + 1) : stopExercise()} className="w-full">
+                                <Button onClick={() => groundingStep < groundingSteps.length - 1 ? setGroundingStep(s => s + 1) : stopExercise()} className="w-full">
                                     {groundingStep < groundingSteps.length - 1 ? "Done" : "Finish"}
                                 </Button>
                             ) : (
