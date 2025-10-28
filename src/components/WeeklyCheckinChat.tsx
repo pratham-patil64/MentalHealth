@@ -37,7 +37,6 @@ const allQuestions = [
   { category: 'depression', text: "Over the last week, how often have you been feeling bad about yourself—or that you are a failure or have let yourself or your family down?" },
 ];
 
-// Standard 0-3 scoring options
 const answerOptions = [
     { text: "Not at all", score: 0 },
     { text: "Several days", score: 1 },
@@ -48,7 +47,6 @@ const answerOptions = [
 const WeeklyCheckinChat = ({ user, onComplete }: WeeklyCheckinChatProps) => {
   const [conversation, setConversation] = useState<{ sender: 'bot' | 'user'; text: string }[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  // State now holds numbers instead of booleans
   const [answers, setAnswers] = useState<Record<string, number[]>>({
     stress: [],
     anxiety: [],
@@ -59,6 +57,18 @@ const WeeklyCheckinChat = ({ user, onComplete }: WeeklyCheckinChatProps) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  const addMessage = (sender: 'bot' | 'user', text: string) => {
+    setConversation(prev => [...prev, { sender, text }]);
+  };
+
+  const askNextQuestion = () => {
+    if (currentQuestionIndex < allQuestions.length) {
+        addMessage("bot", allQuestions[currentQuestionIndex].text);
+        setIsAnswering(true);
+    }
+  };
+
+  // Initial greeting and first question
   useEffect(() => {
     if (conversation.length === 0) {
       addMessage("bot", "Hi! Let's start your weekly check-in by answering a few questions.");
@@ -66,60 +76,28 @@ const WeeklyCheckinChat = ({ user, onComplete }: WeeklyCheckinChatProps) => {
     }
   }, []);
 
+  // Ask subsequent questions
+  useEffect(() => {
+    if (conversation.length > 1 && currentQuestionIndex > 0 && currentQuestionIndex < allQuestions.length) {
+        const timer = setTimeout(() => {
+            askNextQuestion();
+        }, 500); // Delay for bot "thinking" time
+        return () => clearTimeout(timer);
+    }
+  }, [currentQuestionIndex]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation]);
 
-  useEffect(() => {
-    if (conversation.length > 1 && currentQuestionIndex > 0) {
-      const timer = setTimeout(() => {
-        askNextQuestion();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [currentQuestionIndex]);
-
-
-  const addMessage = (sender: 'bot' | 'user', text: string) => {
-    setConversation(prev => [...prev, { sender, text }]);
-  };
-
-  const askNextQuestion = () => {
-    if (currentQuestionIndex < allQuestions.length) {
-      addMessage("bot", allQuestions[currentQuestionIndex].text);
-      setIsAnswering(true);
-    } else {
-      addMessage("bot", "That's all for this week. Thank you for sharing!");
-      saveResults(answers);
-    }
-  };
-
-  // Function now accepts the score (number) and the answer text (string)
-  const handleAnswer = (score: number, text: string) => {
-    if (currentQuestionIndex >= allQuestions.length) {
-      return;
-    }
-
-    addMessage("user", text); // Display the chosen text in the chat
-    setIsAnswering(false);
-    
-    const currentQuestion = allQuestions[currentQuestionIndex];
-    setAnswers(prev => ({
-      ...prev,
-      [currentQuestion.category]: [...prev[currentQuestion.category], score], // Store the score
-    }));
-
-    setCurrentQuestionIndex(prev => prev + 1);
-  };
-
   const saveResults = async (finalAnswers: typeof answers) => {
     setIsLoading(true);
     try {
-      // New Scoring: Sum the scores for each category instead of counting 'true' values.
       const stressScore = finalAnswers.stress.reduce((sum, current) => sum + current, 0);
       const anxietyScore = finalAnswers.anxiety.reduce((sum, current) => sum + current, 0);
       const depressionScore = finalAnswers.depression.reduce((sum, current) => sum + current, 0);
 
+      // This part remains the same and is working correctly.
       await addDoc(collection(db, "weeklyChats"), {
         studentUid: user.uid,
         chatDate: Timestamp.now(),
@@ -134,11 +112,14 @@ const WeeklyCheckinChat = ({ user, onComplete }: WeeklyCheckinChatProps) => {
         },
       });
 
+      // ✅ CHANGE: Update the student document with a nested 'scores' object for consistency.
       const studentDocRef = doc(db, "students", user.uid);
       await updateDoc(studentDocRef, {
-        stressScore,
-        anxietyScore,
-        depressionScore,
+        scores: {
+          stress: stressScore,
+          anxiety: anxietyScore,
+          depression: depressionScore,
+        }
       });
 
       toast({
@@ -155,6 +136,32 @@ const WeeklyCheckinChat = ({ user, onComplete }: WeeklyCheckinChatProps) => {
         variant: "destructive",
       });
       setIsLoading(false);
+    }
+  };
+
+  const handleAnswer = (score: number, text: string) => {
+    if (currentQuestionIndex >= allQuestions.length) return;
+
+    addMessage("user", text);
+    setIsAnswering(false);
+    
+    // Create the new, updated answers object immediately
+    const currentQuestion = allQuestions[currentQuestionIndex];
+    const newAnswers = {
+        ...answers,
+        [currentQuestion.category]: [...answers[currentQuestion.category], score],
+    };
+    
+    // Update state with the new answers
+    setAnswers(newAnswers);
+
+    const nextQuestionIndex = currentQuestionIndex + 1;
+    setCurrentQuestionIndex(nextQuestionIndex);
+
+    // If that was the last question, save the results immediately
+    if (nextQuestionIndex >= allQuestions.length) {
+        addMessage("bot", "That's all for this week. Thank you for sharing!");
+        saveResults(newAnswers); // Use the newAnswers object directly
     }
   };
 
@@ -178,7 +185,6 @@ const WeeklyCheckinChat = ({ user, onComplete }: WeeklyCheckinChatProps) => {
       </div>
       <div className="p-4 border-t bg-card rounded-b-lg">
         {isAnswering ? (
-          // New UI: Display four buttons for the 0-3 scale
           <div className="grid grid-cols-2 gap-3">
             {answerOptions.map((option) => (
               <Button 

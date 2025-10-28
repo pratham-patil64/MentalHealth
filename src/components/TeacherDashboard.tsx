@@ -69,7 +69,18 @@ const TeacherDashboard = () => {
     const q = collection(db, "students");
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const studentData = querySnapshot.docs.map((doc) => {
-        return { uid: doc.id, ...doc.data() } as Student;
+        const data = doc.data();
+        
+        // ✅ CHANGE: Read from the nested 'scores' object and map to the expected fields.
+        const scores = data.scores || {};
+        
+        return {
+          uid: doc.id,
+          ...data,
+          depressionScore: scores.depression ?? data.depressionScore ?? 0,
+          anxietyScore: scores.anxiety ?? data.anxietyScore ?? 0,
+          stressScore: scores.stress ?? data.stressScore ?? 0,
+        } as Student;
       });
 
       studentData.sort((a, b) => {

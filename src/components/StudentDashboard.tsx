@@ -99,39 +99,73 @@ const StudentDashboard = ({ user, googleAccessToken }: StudentDashboardProps) =>
         return { start: Timestamp.fromDate(monday), end: Timestamp.fromDate(sunday) };
     }
 
-    const fetchStudentData = async () => {
-        if (!user) return;
-        setLoading(true);
-        try {
-            const docRef = doc(db, "students", user.uid);
-            const docSnap = await getDoc(docRef);
-            let currentStudentData: Student | null = null;
-            if (docSnap.exists()) {
-                currentStudentData = docSnap.data() as Student;
-                setStudentData(currentStudentData);
-                if (!currentStudentData.school || !currentStudentData.parentPhone || !currentStudentData.class) { 
-                    setView("profile"); 
-                } else { 
-                    setView("dashboard"); 
-                }
-            } else { 
-                setView("profile"); 
-            }
-            
-            const { start, end } = getWeekBoundaries(new Date());
-            const qChats = query( collection(db, "weeklyChats"), where("studentUid", "==", user.uid), where("chatDate", ">=", start), where("chatDate", "<=", end) );
-            const chatSnapshot = await getDocs(qChats);
-            setHasChattedThisWeek(!chatSnapshot.empty);
-            
-            if (currentStudentData?.school) {
-                const qJournals = query(collection(db, "journalEntries"), where("studentUid", "==", user.uid), orderBy("timestamp", "desc"), limit(3));
-                const querySnapshot = await getDocs(qJournals);
-                setRecentEntries(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RecentEntry)));
-            }
+const fetchStudentData = async () => {
+  if (!user) return;
+  setLoading(true);
+  try {
+    const docRef = doc(db, "students", user.uid);
+    const docSnap = await getDoc(docRef);
+    let currentStudentData: Student | null = null;
 
-        } catch (error) { console.error("ERROR fetching data:", error); } 
-        finally { setLoading(false); }
-    };
+    if (docSnap.exists()) {
+      const data = docSnap.data() as any; // Use 'any' to handle flexible data shape
+      
+      // Check for a nested 'scores' object first, otherwise use top-level fields
+      const scores = data.scores || {};
+
+      currentStudentData = {
+        ...data,
+        depressionScore: scores.depression ?? data.depressionScore ?? 0,
+        anxietyScore: scores.anxiety ?? data.anxietyScore ?? 0,
+        stressScore: scores.stress ?? data.stressScore ?? 0,
+      } as Student;
+
+      setStudentData(currentStudentData);
+
+      if (
+        !currentStudentData.school ||
+        !currentStudentData.parentPhone ||
+        !currentStudentData.class
+      ) {
+        setView("profile");
+      } else {
+        setView("dashboard");
+      }
+    } else {
+      setView("profile");
+    }
+
+    const { start, end } = getWeekBoundaries(new Date());
+    const qChats = query(
+      collection(db, "weeklyChats"),
+      where("studentUid", "==", user.uid),
+      where("chatDate", ">=", start),
+      where("chatDate", "<=", end)
+    );
+    const chatSnapshot = await getDocs(qChats);
+    setHasChattedThisWeek(!chatSnapshot.empty);
+
+    if (currentStudentData?.school) {
+      const qJournals = query(
+        collection(db, "journalEntries"),
+        where("studentUid", "==", user.uid),
+        orderBy("timestamp", "desc"),
+        limit(3)
+      );
+      const querySnapshot = await getDocs(qJournals);
+      setRecentEntries(
+        querySnapshot.docs.map(
+          (doc) => ({ id: doc.id, ...doc.data() } as RecentEntry)
+        )
+      );
+    }
+  } catch (error) {
+    console.error("ERROR fetching data:", error);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
     useEffect(() => { fetchStudentData(); }, [user]);
     
