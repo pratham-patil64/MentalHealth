@@ -216,10 +216,12 @@ const StudentDashboard = ({ user, googleAccessToken }: StudentDashboardProps) =>
         }
     }, [behavioralScores, calculateAndSaveUnifiedScores]);
 
-    // This is the callback for GoogleFit, wrapped in useCallback to prevent re-renders
+    // *** THIS IS THE FIX ***
+    // Wrap the handleScoresCalculated function in useCallback
+    // This stops it from being re-created on every render, breaking the loop.
     const handleScoresCalculated = useCallback((scores: BehavioralScores) => {
         setBehavioralScores(scores);
-    }, []); // Empty dependency array means this function is stable and won't cause loops
+    }, []); // Empty dependency array means this function never changes
     
     // This triggers calculation after a chat
     const handleCheckinComplete = () => {
@@ -405,7 +407,7 @@ const StudentDashboard = ({ user, googleAccessToken }: StudentDashboardProps) =>
                                 <div className="my-8 text-center animate-fade-in">
                                     {GroundingIcon && <GroundingIcon className="w-16 h-16 text-primary mx-auto mb-4" />}
                                     <p className="text-2xl font-semibold">{groundingSteps[groundingStep].prompt}</p>
-                                </div>
+</div>
                             ) : (
                                 <div className="my-8 flex justify-center items-center">
                                     <div className={`w-48 h-48 rounded-full border-4 border-muted flex items-center justify-center ${activeExercise.animationClass}`}>
