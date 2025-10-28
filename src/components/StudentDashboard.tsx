@@ -20,13 +20,12 @@ import {
   FileText, MessageCircle, Brain, History, Heart, Check,
   User as UserIcon, LogOut, Calendar, X, Wind, Flower, Star, Eye, Hand, Ear, Sun, Fingerprint, ArrowLeft, ClipboardList
 } from "lucide-react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import ProfilePage from "./ProfilePage";
 import Journal from "./Journal";
 import WeeklyCheckinChat from "./WeeklyCheckinChat";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-// The Student interface is now cleaner without PHQ-9 properties
 export interface Student {
   uid: string;
   name: string;
@@ -305,13 +304,49 @@ const StudentDashboard = ({ user, googleAccessToken }: StudentDashboardProps) =>
             
             <Dialog open={isCheckinModalOpen} onOpenChange={setIsCheckinModalOpen}>
                 <DialogContent className="max-w-lg p-0 border-0 bg-transparent">
+                    {/* FIX: Added accessible title and description */}
+                    <DialogTitle className="sr-only">Weekly Check-in Chat</DialogTitle>
+                    <DialogDescription className="sr-only">A guided chat to check on your mental well-being for the week.</DialogDescription>
                     <WeeklyCheckinChat user={user} onComplete={handleCheckinComplete} />
                 </DialogContent>
             </Dialog>
 
             {isGeneralChatOpen && (<div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"><div className="bg-card rounded-2xl shadow-xl w-full h-full flex flex-col max-w-4xl max-h-[90vh]"><div className="p-3 border-b flex justify-between items-center bg-muted/50 rounded-t-2xl"><h3 className="font-bold text-lg flex items-center"><MessageCircle className="w-5 h-5 mr-2" />AI Companion</h3><Button variant="ghost" size="icon" onClick={handleCloseGeneralChat} className="rounded-full"><X className="w-5 h-5" /></Button></div><iframe src={generalChatUrl} className="w-full h-full border-0 rounded-b-2xl" title="Botpress Chat"></iframe></div></div>)}
             
-            <Dialog open={isExerciseModalOpen} onOpenChange={stopExercise}><DialogContent className="max-w-md text-center p-8">{activeExercise && (<><div className="mx-auto w-24 h-24 rounded-full {activeExercise.color} flex items-center justify-center mb-4">{activeExercise.Icon && <activeExercise.Icon className="w-12 h-12 text-white" />}</div><h2 className="text-3xl font-bold">{activeExercise.title}</h2>{activeExercise.id === '5-4-3-2-1-grounding' ? (<div className="my-8 text-center animate-fade-in">{GroundingIcon && <GroundingIcon className="w-16 h-16 text-primary mx-auto mb-4" />}<p className="text-2xl font-semibold">{groundingSteps[groundingStep].prompt}</p></div>) : (<div className="my-8 flex justify-center items-center"><div className={`w-48 h-48 rounded-full border-4 border-muted flex items-center justify-center ${activeExercise.animationClass}`}><span className="text-5xl font-bold text-foreground">{countdown}s</span></div></div>)}{activeExercise.id === '5-4-3-2-1-grounding' ? (<Button onClick={() => groundingStep < groundingSteps.length - 1 ? setGroundingStep(groundingStep + 1) : stopExercise()} className="w-full">{groundingStep < groundingSteps.length - 1 ? "Done" : "Finish"}</Button>) : (<Button onClick={stopExercise} variant="outline" className="w-full">Stop Exercise</Button>)}</>)}</DialogContent></Dialog>
+            <Dialog open={isExerciseModalOpen} onOpenChange={stopExercise}>
+                <DialogContent className="max-w-md text-center p-8">
+                    {activeExercise && (
+                        <>
+                            {/* FIX: Added accessible title and description */}
+                            <DialogTitle className="sr-only">{activeExercise.title}</DialogTitle>
+                            <DialogDescription className="sr-only">An interactive modal for the {activeExercise.title} calming exercise.</DialogDescription>
+                            <div className={`mx-auto w-24 h-24 rounded-full ${activeExercise.color} flex items-center justify-center mb-4`}>
+                                {activeExercise.Icon && <activeExercise.Icon className="w-12 h-12 text-white" />}
+                            </div>
+                            <h2 className="text-3xl font-bold">{activeExercise.title}</h2>
+                            {activeExercise.id === '5-4-3-2-1-grounding' ? (
+                                <div className="my-8 text-center animate-fade-in">
+                                    {GroundingIcon && <GroundingIcon className="w-16 h-16 text-primary mx-auto mb-4" />}
+                                    <p className="text-2xl font-semibold">{groundingSteps[groundingStep].prompt}</p>
+                                </div>
+                            ) : (
+                                <div className="my-8 flex justify-center items-center">
+                                    <div className={`w-48 h-48 rounded-full border-4 border-muted flex items-center justify-center ${activeExercise.animationClass}`}>
+                                        <span className="text-5xl font-bold text-foreground">{countdown}s</span>
+                                    </div>
+                                </div>
+                            )}
+                            {activeExercise.id === '5-4-3-2-1-grounding' ? (
+                                <Button onClick={() => groundingStep < groundingSteps.length - 1 ? setGroundingStep(groundingStep + 1) : stopExercise()} className="w-full">
+                                    {groundingStep < groundingSteps.length - 1 ? "Done" : "Finish"}
+                                </Button>
+                            ) : (
+                                <Button onClick={stopExercise} variant="outline" className="w-full">Stop Exercise</Button>
+                            )}
+                        </>
+                    )}
+                </DialogContent>
+            </Dialog>
             <style>{`@keyframes breathe-478 { 0% { transform: scale(0.8); } 21% { transform: scale(1); } 58% { transform: scale(1); } 100% { transform: scale(0.8); } } .animate-478-breathing { animation: breathe-478 19s infinite ease-in-out; } .animate-pulse-slow { animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite; } .animate-fade-in { animation: fadeIn 0.5s ease-in-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
         </>
     );

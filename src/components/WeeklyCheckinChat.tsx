@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { db } from "@/firebase";
-import { collection, addDoc, Timestamp } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  doc,
+  updateDoc,
+  Timestamp,
+} from "firebase/firestore";
 import { User } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -14,102 +20,146 @@ interface WeeklyCheckinChatProps {
 }
 
 const allQuestions = [
-  // Anxiety Questions
-  { category: 'anxiety', text: "Over the last week, have you felt nervous, anxious or on edge due to academic pressure?" },
-  { category: 'anxiety', text: "Have you been unable to stop worrying about your academic affairs?" },
-  { category: 'anxiety', text: "Have you been easily annoyed or irritated because of academic pressure?" },
-  { category: 'anxiety', text: "Have you worried too much about academic affairs?" },
-  { category: 'anxiety', text: "Have you felt afraid, as if something awful might happen?" },
-  // Depression Questions
-  { category: 'depression', text: "Have you had little interest or pleasure in doing things?" },
-  { category: 'depression', text: "Have you been feeling down, depressed or hopeless?" },
-  { category: 'depression', text: "Have you had a poor appetite or been overeating?" },
-  { category: 'depression', text: "Have you been feeling bad about yourself—or that you are a failure or have let yourself or your family down?" },
-  { category: 'depression', text: "Have you been having trouble concentrating on things, such as reading books or watching television?" },
-  { category: 'depression', text: "Have you had thoughts that you would be better off dead, or of hurting yourself?" },
-  // Stress Questions
-  { category: 'stress', text: "Have you felt upset due to something that happened in your academic affairs?" },
-  { category: 'stress', text: "Have you been able to control irritations in your academic / university affairs?" },
+  // Stress Questions (DASS-21 inspired)
+  { category: 'stress', text: "Over the last week, how often have you found it hard to wind down?" },
+  { category: 'stress', text: "Over the last week, how often have you been easily annoyed or irritable?" },
+  { category: 'stress', text: "Over the last week, how often have you felt nervous, anxious or on edge?" },
+  // Anxiety Questions (GAD-7 inspired)
+  { category: 'anxiety', text: "Over the last week, how often have you been unable to stop or control worrying?" },
+  { category: 'anxiety', text: "Over the last week, how often have you been worrying too much about different things?" },
+  { category: 'anxiety', text: "Over the last week, how often have you had trouble relaxing?" },
+  { category: 'anxiety', text: "Over the last week, how often have you felt afraid as if something awful might happen?" },
+  // Depression Questions (PHQ-9 inspired)
+  { category: 'depression', text: "Over the last week, how often have you had little interest or pleasure in doing things?" },
+  { category: 'depression', text: "Over the last week, how often have you been feeling down, depressed, or hopeless?" },
+  { category: 'depression', text: "Over the last week, how often have you had trouble falling or staying asleep, or sleeping too much?" },
+  { category: 'depression', text: "Over the last week, how often have you been feeling tired or having little energy?" },
+  { category: 'depression', text: "Over the last week, how often have you been feeling bad about yourself—or that you are a failure or have let yourself or your family down?" },
+];
+
+// Standard 0-3 scoring options
+const answerOptions = [
+    { text: "Not at all", score: 0 },
+    { text: "Several days", score: 1 },
+    { text: "More than half the days", score: 2 },
+    { text: "Nearly every day", score: 3 },
 ];
 
 const WeeklyCheckinChat = ({ user, onComplete }: WeeklyCheckinChatProps) => {
   const [conversation, setConversation] = useState<{ sender: 'bot' | 'user'; text: string }[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<{ anxiety: boolean[], depression: boolean[], stress: boolean[] }>({ anxiety: [], depression: [], stress: [] });
-  const [isAnswering, setIsAnswering] = useState(true);
+  // State now holds numbers instead of booleans
+  const [answers, setAnswers] = useState<Record<string, number[]>>({
+    stress: [],
+    anxiety: [],
+    depression: [],
+  });
+  const [isAnswering, setIsAnswering] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { toast } = useToast();
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
-  // Initial greeting from the bot
   useEffect(() => {
-    setConversation([{ sender: 'bot', text: "Hello! It's time for our weekly check-in. I'm here to listen without judgment. I'll ask a few simple 'Yes' or 'No' questions." }]);
-    setTimeout(() => {
-        setConversation(prev => [...prev, { sender: 'bot', text: allQuestions[0].text }]);
-    }, 1500);
+    if (conversation.length === 0) {
+      addMessage("bot", "Hi! Let's start your weekly check-in by answering a few questions.");
+      setTimeout(() => askNextQuestion(), 1000);
+    }
   }, []);
-  
-  // Scroll to bottom of chat on new message
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation]);
 
+  useEffect(() => {
+    if (conversation.length > 1 && currentQuestionIndex > 0) {
+      const timer = setTimeout(() => {
+        askNextQuestion();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [currentQuestionIndex]);
+
+
+  const addMessage = (sender: 'bot' | 'user', text: string) => {
+    setConversation(prev => [...prev, { sender, text }]);
+  };
+
+  const askNextQuestion = () => {
+    if (currentQuestionIndex < allQuestions.length) {
+      addMessage("bot", allQuestions[currentQuestionIndex].text);
+      setIsAnswering(true);
+    } else {
+      addMessage("bot", "That's all for this week. Thank you for sharing!");
+      saveResults(answers);
+    }
+  };
+
+  // Function now accepts the score (number) and the answer text (string)
+  const handleAnswer = (score: number, text: string) => {
+    if (currentQuestionIndex >= allQuestions.length) {
+      return;
+    }
+
+    addMessage("user", text); // Display the chosen text in the chat
+    setIsAnswering(false);
+    
+    const currentQuestion = allQuestions[currentQuestionIndex];
+    setAnswers(prev => ({
+      ...prev,
+      [currentQuestion.category]: [...prev[currentQuestion.category], score], // Store the score
+    }));
+
+    setCurrentQuestionIndex(prev => prev + 1);
+  };
+
   const saveResults = async (finalAnswers: typeof answers) => {
     setIsLoading(true);
     try {
+      // New Scoring: Sum the scores for each category instead of counting 'true' values.
+      const stressScore = finalAnswers.stress.reduce((sum, current) => sum + current, 0);
+      const anxietyScore = finalAnswers.anxiety.reduce((sum, current) => sum + current, 0);
+      const depressionScore = finalAnswers.depression.reduce((sum, current) => sum + current, 0);
+
       await addDoc(collection(db, "weeklyChats"), {
         studentUid: user.uid,
         chatDate: Timestamp.now(),
         weekOfMonth: Math.ceil(new Date().getDate() / 7),
+        stressResponses: finalAnswers.stress,
         anxietyResponses: finalAnswers.anxiety,
         depressionResponses: finalAnswers.depression,
-        stressResponses: finalAnswers.stress,
+        scores: {
+          stress: stressScore,
+          anxiety: anxietyScore,
+          depression: depressionScore,
+        },
       });
-      toast({ title: "Check-in complete!", description: "Thank you for sharing. Your responses have been saved." });
+
+      const studentDocRef = doc(db, "students", user.uid);
+      await updateDoc(studentDocRef, {
+        stressScore,
+        anxietyScore,
+        depressionScore,
+      });
+
+      toast({
+        title: "Check-in complete!",
+        description: "Your responses have been saved.",
+      });
+
       setTimeout(onComplete, 1500);
     } catch (error) {
       console.error("Error saving chat results:", error);
-      toast({ title: "Error", description: "Could not save your responses. Please try again.", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Could not save your responses. Please try again.",
+        variant: "destructive",
+      });
       setIsLoading(false);
     }
   };
 
-  const handleAnswer = (answer: boolean) => {
-    if (!isAnswering) return;
-
-    // 1. Show user's answer
-    setConversation(prev => [...prev, { sender: 'user', text: answer ? 'Yes' : 'No' }]);
-    setIsAnswering(false);
-
-    // 2. Store the answer internally
-    const currentQuestion = allQuestions[currentQuestionIndex];
-    const updatedAnswers = { ...answers };
-    updatedAnswers[currentQuestion.category as keyof typeof answers].push(answer);
-    setAnswers(updatedAnswers);
-
-    // 3. Empathetic bot response & next question
-    setTimeout(() => {
-      setConversation(prev => [...prev, { sender: 'bot', text: "Thank you for sharing." }]);
-
-      const nextIndex = currentQuestionIndex + 1;
-      if (nextIndex < allQuestions.length) {
-        setTimeout(() => {
-          setCurrentQuestionIndex(nextIndex);
-          setConversation(prev => [...prev, { sender: 'bot', text: allQuestions[nextIndex].text }]);
-          setIsAnswering(true);
-        }, 1200);
-      } else {
-        // End of chat
-        setTimeout(() => {
-          setConversation(prev => [...prev, { sender: 'bot', text: "That's all for this week. Thank you for taking the time to check in with yourself." }]);
-          saveResults(updatedAnswers);
-        }, 1200);
-      }
-    }, 800);
-  };
-
   return (
-    <div className="flex flex-col h-[70vh]">
+    <div className="flex flex-col h-[80vh] bg-background rounded-lg shadow-lg">
       <div className="flex-1 space-y-4 overflow-y-auto p-4 bg-muted/50 rounded-t-lg">
         {conversation.map((msg, index) => (
           <div key={index} className={`flex items-end gap-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -128,12 +178,24 @@ const WeeklyCheckinChat = ({ user, onComplete }: WeeklyCheckinChatProps) => {
       </div>
       <div className="p-4 border-t bg-card rounded-b-lg">
         {isAnswering ? (
-          <div className="flex justify-center gap-4">
-            <Button onClick={() => handleAnswer(true)} size="lg" className="w-1/2 bg-green-600 hover:bg-green-700">Yes</Button>
-            <Button onClick={() => handleAnswer(false)} size="lg" className="w-1/2 bg-red-600 hover:bg-red-700">No</Button>
+          // New UI: Display four buttons for the 0-3 scale
+          <div className="grid grid-cols-2 gap-3">
+            {answerOptions.map((option) => (
+              <Button 
+                key={option.score} 
+                onClick={() => handleAnswer(option.score, option.text)} 
+                variant="outline"
+                size="lg"
+                className="h-auto py-3"
+              >
+                {option.text}
+              </Button>
+            ))}
           </div>
         ) : (
-          <p className="text-center text-muted-foreground animate-pulse">{isLoading ? "Saving..." : "Thinking..."}</p>
+          <Button disabled className="w-full">
+            {isLoading ? "Saving..." : "Please wait..."}
+          </Button>
         )}
       </div>
     </div>
