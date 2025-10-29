@@ -16,8 +16,9 @@ import NotFound from "./pages/NotFound";
 import StudentLogin from "./components/StudentLogin";
 import TeacherLogin from "./components/TeacherLogin";
 import StudentDashboard from "./components/StudentDashboard";
-import TeacherDashboard from "./components/TeacherDashboard";
+import AdminDashboard from "./components/AdminDashboard"; // Correctly named
 import StudentRegister from "@/components/StudentRegister";
+import TeacherPortal from "./components/TeacherPortal"; // Added import
 
 const queryClient = new QueryClient();
 
@@ -82,11 +83,28 @@ const AppRoutes = () => {
         }
       />
 
+      {/* --- CORRECTED AND ADDED ROUTES --- */}
       <Route
         path="/teacher-dashboard"
         element={
           <ProtectedRoute user={authUser} redirectTo="/teacher-login">
-            <TeacherDashboard />
+            <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+       <Route
+        path="/teacher-portal"
+        element={
+          <ProtectedRoute user={authUser} redirectTo="/teacher-login">
+            <TeacherPortal />
+          </ProtectedRoute>
+        }
+      />
+       <Route
+        path="/admin-dashboard"
+        element={
+          <ProtectedRoute user={authUser} redirectTo="/teacher-login">
+            <AdminDashboard />
           </ProtectedRoute>
         }
       />
