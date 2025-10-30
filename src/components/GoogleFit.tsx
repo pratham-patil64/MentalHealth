@@ -5,11 +5,11 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { calculateBehavioralScores, BehavioralScores } from '@/lib/healthCalculations';
-import { 
-    Dialog, 
-    DialogContent, 
-    DialogHeader, 
-    DialogTitle, 
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
     DialogDescription,
     DialogFooter
 } from '@/components/ui/dialog';
@@ -54,15 +54,15 @@ const GoogleFit = ({ accessToken, onScoresCalculated }: GoogleFitProps) => {
                     startTimeMillis: startTime.getTime(),
                     endTimeMillis: endTime.getTime(),
                 };
-                
+
                 // Fetch Steps
                 const stepsResponse = await axios.post('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', { ...requestBodyBase, aggregateBy: [{ dataTypeName: 'com.google.step_count.delta' }] }, { headers });
                 let dailySteps: { date: string, steps: number }[] = [];
                 let calculatedAvgSteps = 0;
                 if (stepsResponse.data.bucket) {
-                    dailySteps = stepsResponse.data.bucket.map((bucket: any) => ({ 
-                        date: new Date(parseInt(bucket.startTimeMillis)).toLocaleDateString(), 
-                        steps: bucket.dataset[0]?.point?.[0]?.value?.[0]?.intVal || 0 
+                    dailySteps = stepsResponse.data.bucket.map((bucket: any) => ({
+                        date: new Date(parseInt(bucket.startTimeMillis)).toLocaleDateString(),
+                        steps: bucket.dataset[0]?.point?.[0]?.value?.[0]?.intVal || 0
                     }));
                     setSteps(dailySteps);
                     if (dailySteps.length > 0) {
@@ -84,9 +84,9 @@ const GoogleFit = ({ accessToken, onScoresCalculated }: GoogleFitProps) => {
                                 .filter((p: any) => [1, 2, 4].includes(p.value[0].intVal)) // Light, Deep, REM
                                 .reduce((total: number, point: any) => total + (point.endTimeNanos - point.startTimeNanos), 0);
                         }
-                        return { 
-                            date: new Date(parseInt(bucket.startTimeMillis)).toLocaleDateString(), 
-                            hours: totalSleepNanos > 0 ? parseFloat((totalSleepNanos / 3.6e+12).toFixed(2)) : 0 
+                        return {
+                            date: new Date(parseInt(bucket.startTimeMillis)).toLocaleDateString(),
+                            hours: totalSleepNanos > 0 ? parseFloat((totalSleepNanos / 3.6e+12).toFixed(2)) : 0
                         };
                     });
                     setSleep(dailySleep);
@@ -109,7 +109,7 @@ const GoogleFit = ({ accessToken, onScoresCalculated }: GoogleFitProps) => {
                 // Fetch other data for display
                 const heartResponse = await axios.post('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', { ...requestBodyBase, aggregateBy: [{ dataTypeName: 'com.google.heart_rate.bpm' }] }, { headers });
                 if (heartResponse.data.bucket) setHeartRate(heartResponse.data.bucket.map((b: any) => ({ date: new Date(parseInt(b.startTimeMillis)).toLocaleDateString(), bpm: Math.round(b.dataset[0]?.point?.[0]?.value?.[0]?.fpVal || 0) })));
-                
+
                 const caloriesResponse = await axios.post('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', { ...requestBodyBase, aggregateBy: [{ dataTypeName: 'com.google.calories.expended' }] }, { headers });
                 if (caloriesResponse.data.bucket) setCalories(caloriesResponse.data.bucket.map((b: any) => ({ date: new Date(parseInt(b.startTimeMillis)).toLocaleDateString(), calories: Math.round(b.dataset[0]?.point?.[0]?.value?.[0]?.fpVal || 0) })));
             } catch (err: any) {
@@ -136,10 +136,25 @@ const GoogleFit = ({ accessToken, onScoresCalculated }: GoogleFitProps) => {
         // Use avgSteps from state, and manual sleep from input
         const newScores = calculateBehavioralScores(manualAvgSleepHours, avgSteps);
         onScoresCalculated(newScores);
+
+        // Create dummy data for the last 7 days to display in the chart
+        const lastSevenDays = Array.from({ length: 7 }, (_, i) => {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            return d.toLocaleDateString();
+        }).reverse();
+
+        const manualSleepData = lastSevenDays.map(date => ({
+            date,
+            hours: manualAvgSleepHours,
+        }));
+
+        setSleep(manualSleepData);
         setIsSleepModalOpen(false);
         setManualSleep("");
         setError(null); // Clear error after submission
     };
+
 
     if (!accessToken) {
         return <p className="text-center text-muted-foreground">Please sign in with Google to connect Google Fit.</p>

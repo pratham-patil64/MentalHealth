@@ -347,10 +347,10 @@ const StudentDashboard = ({ user, googleAccessToken }: StudentDashboardProps) =>
                                     <CardContent><GoogleFit accessToken={googleAccessToken} onScoresCalculated={handleScoresCalculated}/></CardContent>
                                 </Card>
 
-                                <Card className="border-0 shadow-card bg-card/50 backdrop-blur-sm">
+                                {/* <Card className="border-0 shadow-card bg-card/50 backdrop-blur-sm">
                                     <CardHeader><CardTitle className="text-2xl text-foreground flex items-center">Google Classroom</CardTitle><CardDescription>View your upcoming assignments.</CardDescription></CardHeader>
                                     <CardContent><GoogleClassroom accessToken={googleAccessToken} /></CardContent>
-                                </Card>
+                                </Card> */}
 
                                 <Card className="border-0 shadow-card bg-card/50 backdrop-blur-sm">
                                     <CardHeader><CardTitle className="text-2xl text-foreground flex items-center"><Calendar className="w-6 h-6 mr-2 text-primary" />Weekly Journal</CardTitle><CardDescription>A private space for your thoughts and feelings.</CardDescription></CardHeader>
