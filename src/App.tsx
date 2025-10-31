@@ -1,3 +1,5 @@
+// src/App.tsx
+
 import { useEffect, useState, ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { onAuthStateChanged, User } from "firebase/auth";
@@ -16,13 +18,14 @@ import NotFound from "./pages/NotFound";
 import StudentLogin from "./components/StudentLogin";
 import TeacherLogin from "./components/TeacherLogin";
 import StudentDashboard from "./components/StudentDashboard";
-import AdminDashboard from "./components/AdminDashboard"; // Correctly named
+import AdminDashboard from "./components/AdminDashboard";
 import StudentRegister from "@/components/StudentRegister";
-import TeacherPortal from "./components/TeacherPortal"; // Added import
+import TeacherPortal from "./components/TeacherPortal";
+import StudentReport from "./components/StudentReport"; // <-- 1. IMPORT THE NEW COMPONENT
 
 const queryClient = new QueryClient();
 
-// Helper component to protect routes
+// Helper component (same as before)
 const ProtectedRoute = ({ user, children, redirectTo = "/student-login" }: { user: User | null; children: ReactNode; redirectTo?: string }) => {
   if (!user) {
     return <Navigate to={redirectTo} replace />;
@@ -30,11 +33,11 @@ const ProtectedRoute = ({ user, children, redirectTo = "/student-login" }: { use
   return <>{children}</>;
 };
 
-// App routing logic
+// App routing logic (same as before)
 const AppRoutes = () => {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [googleToken, setGoogleToken] = useState<string | null>(null); // State for Google Token
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -47,19 +50,16 @@ const AppRoutes = () => {
         navigate("/student-dashboard");
       }
     });
-
-    // Retrieve token from session storage on component mount
     const storedToken = sessionStorage.getItem('googleAccessToken');
     if (storedToken) {
         setGoogleToken(storedToken);
     }
-
     return () => unsubscribe();
   }, [navigate, location.pathname]);
 
   const handleGoogleLoginSuccess = (token: string) => {
     setGoogleToken(token);
-    sessionStorage.setItem('googleAccessToken', token); // Store token in session storage
+    sessionStorage.setItem('googleAccessToken', token);
     navigate("/student-dashboard");
   };
 
@@ -82,8 +82,6 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-
-      {/* --- CORRECTED AND ADDED ROUTES --- */}
       <Route
         path="/teacher-dashboard"
         element={
@@ -109,12 +107,22 @@ const AppRoutes = () => {
         }
       />
       
+      {/* --- 2. ADD THE NEW REPORT ROUTE --- */}
+      <Route
+        path="/report/:studentId"
+        element={
+          <ProtectedRoute user={authUser} redirectTo="/teacher-login">
+            <StudentReport />
+          </ProtectedRoute>
+        }
+      />
+      
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
 };
 
-// Main App component
+// Main App component (same as before)
 const App = () => (
   <GoogleOAuthProvider clientId="162276798485-j874m3oenarvot0qpemr4k14to8kd0fh.apps.googleusercontent.com">
     <QueryClientProvider client={queryClient}>

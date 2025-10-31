@@ -1,6 +1,18 @@
+// src/components/AdminDashboard.tsx
+
 import { useEffect, useState } from "react";
 import { db, auth } from "@/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  getDocs,
+  Timestamp,
+  doc,
+  updateDoc,
+} from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,12 +63,26 @@ import {
   ArrowLeft,
   Download,
   LogOut,
+  ExternalLink,
+  CheckCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Student } from "./StudentDashboard"; // Import the Student interface
+import { Student } from "./StudentDashboard";
+import { useToast } from "@/components/ui/use-toast";
+
+// Interface for journal entries
+interface JournalEntry {
+  id: string;
+  content: string;
+  timestamp: Timestamp;
+  sentimentScore?: number;
+  sentimentMagnitude?: number;
+}
+type MentalHealthStatus = 'Positive' | 'Neutral' | 'Needs Attention' | 'Urgent';
 
 const TeacherDashboard = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClass, setSelectedClass] = useState("all");
   const [selectedDivision, setSelectedDivision] = useState("all");
@@ -64,17 +90,22 @@ const TeacherDashboard = () => {
     null
   );
   const [students, setStudents] = useState<Student[]>([]);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [journalsLoading, setJournalsLoading] = useState(false);
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+  const [urgentStudents, setUrgentStudents] = useState<Student[]>([]);
 
-  // Formula to calculate status dynamically
-  const getMentalHealthStatus = (student: Student): 'Positive' | 'Neutral' | 'Needs Attention' => {
+  // Function to determine status
+  const getMentalHealthStatus = (student: Student): MentalHealthStatus => {
+    if (student.needsHelp) {
+      return 'Urgent';
+    }
     const { depressionScore = 0, anxietyScore = 0, stressScore = 0 } = student;
-
     const thresholds = {
       stress: { moderate: 5, mild: 3 },
       anxiety: { moderate: 7, mild: 4 },
       depression: { moderate: 8, mild: 4 },
     };
-
     if (
       stressScore >= thresholds.stress.moderate ||
       anxietyScore >= thresholds.anxiety.moderate ||
@@ -82,7 +113,6 @@ const TeacherDashboard = () => {
     ) {
       return 'Needs Attention';
     }
-
     if (
       stressScore < thresholds.stress.mild &&
       anxietyScore < thresholds.anxiety.mild &&
@@ -90,39 +120,54 @@ const TeacherDashboard = () => {
     ) {
       return 'Positive';
     }
-
     return 'Neutral';
   };
 
+  // useEffect to fetch students and check for alerts
   useEffect(() => {
     const q = collection(db, "students");
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      let hasUrgentAlerts = false;
       const studentData = querySnapshot.docs.map((doc) => {
         const data = doc.data();
         const scores = data.scores || {};
+        const needsHelp = data.needsHelp || false;
         
+        if(needsHelp) {
+          hasUrgentAlerts = true;
+        }
+
         return {
           uid: doc.id,
           ...data,
           depressionScore: scores.depression ?? data.depressionScore ?? 0,
           anxietyScore: scores.anxiety ?? data.anxietyScore ?? 0,
           stressScore: scores.stress ?? data.stressScore ?? 0,
+          needsHelp: needsHelp,
         } as Student;
       });
 
       studentData.sort((a, b) => {
         const statusA = getMentalHealthStatus(a);
         const statusB = getMentalHealthStatus(b);
+        if (statusA === "Urgent" && statusB !== "Urgent") return -1;
+        if (statusA !== "Urgent" && statusB === "Urgent") return 1;
         if (statusA === "Needs Attention" && statusB !== "Needs Attention") return -1;
         if (statusA !== "Needs Attention" && statusB === "Needs Attention") return 1;
         return 0;
       });
+      
       setStudents(studentData);
-    });
 
+      if (hasUrgentAlerts) {
+        setUrgentStudents(studentData.filter(s => s.needsHelp));
+        setIsAlertModalOpen(true);
+      }
+    });
     return () => unsubscribe();
   }, []);
 
+  // Filter students
   const filteredStudents = students.filter((student) => {
     const matchesSearch = student.name
       ?.toLowerCase()
@@ -134,6 +179,7 @@ const TeacherDashboard = () => {
     return matchesSearch && matchesClass && matchesDivision;
   });
 
+  // Calculate stats
   const totalStudents = students.length;
   const maleStudents = students.filter((s) => s.gender === "Male").length;
   const femaleStudents = students.filter((s) => s.gender === "Female").length;
@@ -141,31 +187,32 @@ const TeacherDashboard = () => {
   const negativeStudents = students.filter(s => getMentalHealthStatus(s) === "Needs Attention").length;
   const needsHelpCount = students.filter((s) => s.needsHelp).length;
 
-  const getStatusBadge = (status: 'Positive' | 'Neutral' | 'Needs Attention') => {
+  // Badge for status
+  const getStatusBadge = (status: MentalHealthStatus) => {
     switch (status) {
-      case "Positive":
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Positive</Badge>;
+      case "Urgent":
+        return <Badge className="bg-red-600 text-white hover:bg-red-600 animate-pulse">URGENT</Badge>;
       case "Needs Attention":
         return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Needs Attention</Badge>;
+      case "Positive":
+        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Positive</Badge>;
       default:
         return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Neutral</Badge>;
     }
   };
 
+  // Badge for scores
   const getScoreBadge = (
     score: number | undefined,
     category: "stress" | "anxiety" | "depression"
   ) => {
     if (score === undefined || score === null) return <Badge>N/A</Badge>;
-
     const thresholds = {
       stress: { severe: 7, moderate: 5, mild: 3 },
       anxiety: { severe: 10, moderate: 7, mild: 4 },
       depression: { severe: 12, moderate: 8, mild: 4 },
     };
-
     const { severe, moderate, mild } = thresholds[category];
-
     if (score >= severe) {
       return <Badge className="bg-red-200 text-red-800">Severe ({score})</Badge>;
     } else if (score >= moderate) {
@@ -177,11 +224,54 @@ const TeacherDashboard = () => {
     }
   };
   
-    // ✅ NEW: Dynamic recommendations based on status
+  // Function to clear the urgent flag
+  const handleClearUrgentFlag = async (studentUid: string) => {
+    if (!studentUid) return;
+    try {
+      const studentDocRef = doc(db, "students", studentUid);
+      await updateDoc(studentDocRef, {
+        needsHelp: false,
+        lastUrgentEntry: null, // Clear the urgent entry
+        lastUrgentReason: null, // Clear the reason
+      });
+      toast({
+        title: "Student Reviewed",
+        description: "The urgent flag has been cleared for this student.",
+      });
+    } catch (error) {
+      console.error("Error clearing flag:", error);
+      toast({
+        title: "Error",
+        description: "Could not clear the flag. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Recommendations based on status
   const getRecommendations = (student: Student) => {
     const status = getMentalHealthStatus(student);
 
     switch (status) {
+      case 'Urgent':
+        return (
+          <div className="space-y-4 p-4 bg-red-100 rounded-lg border border-red-300">
+            <div className="space-y-2">
+              <p className="text-sm font-bold text-red-700">‼ URGENT ACTION REQUIRED</p>
+              <p className="text-sm text-red-600">• Student's journal flagged for high-risk content.</p>
+              <p className="text-sm text-red-600">• **Follow school's emergency protocol immediately.**</p>
+              <p className="text-sm text-red-600">• Contact school counselor or designated mental health professional.</p>
+            </div>
+            <Button 
+              variant="outline" 
+              className="w-full bg-white border-red-300 text-red-700 hover:bg-red-50"
+              onClick={() => handleClearUrgentFlag(student.uid)}
+            >
+              <CheckCircle className="w-4 h-4 mr-2" />
+              Mark as Reviewed & Clear Urgent Flag
+            </Button>
+          </div>
+        );
       case 'Needs Attention':
         return (
           <div className="space-y-2">
@@ -214,28 +304,124 @@ const TeacherDashboard = () => {
     }
   };
 
+  // Fetch journals for a student
+  const fetchStudentJournals = async (studentUid: string) => {
+    if (!studentUid) return;
+    setJournalsLoading(true);
+    try {
+      const entriesRef = collection(db, "journalEntries");
+      const q = query(
+        entriesRef,
+        where("studentUid", "==", studentUid),
+        orderBy("timestamp", "desc")
+      );
+      const querySnapshot = await getDocs(q);
+      const fetchedEntries = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      } as JournalEntry));
+      setJournalEntries(fetchedEntries);
+    } catch (error) {
+      console.error("Error fetching student journals:", error);
+    }
+    setJournalsLoading(false);
+  };
+
+  // --- ‼ THIS IS THE CORRECTED FUNCTION ---
+  // It now shows the Score (e.g., -0.80) and Severity (e.g., Strong)
+  const getSentimentUI = (score: number | undefined, magnitude: number | undefined) => {
+    if (score === undefined) {
+      return <Badge variant="outline">Analyzing...</Badge>;
+    }
+
+    let text = "Neutral";
+    let color = "bg-yellow-100 text-yellow-800";
+    let emoji = "😐";
+
+    if (score < -0.25) {
+      text = "Negative";
+      color = "bg-red-100 text-red-800";
+      emoji = "😔";
+    } else if (score > 0.25) {
+      text = "Positive";
+      color = "bg-green-100 text-green-800";
+      emoji = "😊";
+    }
+    
+    // This is the Severity score
+    let strength = "";
+    if (magnitude !== undefined) {
+      if (magnitude > 3) strength = "(Strong)";
+      else if (magnitude > 1) strength = "(Clear)";
+    }
+
+    return (
+      <Badge className={`${color} hover:${color}`}>
+        {emoji} {text} {strength} (Score: {score.toFixed(2)})
+      </Badge>
+    );
+  };
+
+  // Format timestamp
+  const formatTimestamp = (timestamp: Timestamp) => {
+      if (!timestamp) return "No date";
+      return timestamp.toDate().toLocaleDateString();
+  };
+  
+  // Open exportable report
+  const handleExportReport = (studentUid: string) => {
+    window.open(`/report/${studentUid}`, '_blank');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-background p-6">
       <div className="max-w-7xl mx-auto space-y-6">
+        
+        {/* Urgent Alert Modal */}
+        <Dialog open={isAlertModalOpen} onOpenChange={setIsAlertModalOpen}>
+          <DialogContent className="max-w-lg border-red-500 border-2">
+            <DialogHeader>
+              <DialogTitle className="flex items-center text-2xl text-red-600">
+                <AlertTriangle className="w-8 h-8 mr-3 animate-pulse" />
+                Urgent Student Alerts
+              </DialogTitle>
+              <DialogDescription className="pt-2">
+                The following students have been flagged for high-risk content in
+                their journals. Please review immediately and follow your
+                school's emergency protocol.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 max-h-60 overflow-y-auto">
+              <ul className="space-y-2">
+                {urgentStudents.map(student => (
+                  <li key={student.uid} className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
+                    <span className="font-medium">{student.name}</span>
+                    <span className="text-sm text-red-700">Class {student.class}{student.division}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <Button onClick={() => setIsAlertModalOpen(false)} className="w-full">
+              Acknowledge and Close
+            </Button>
+          </DialogContent>
+        </Dialog>
+        
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" onClick={() => navigate("/")} className="text-muted-foreground hover:text-primary">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Home
-            </Button>
-            <div>
-              <h1 className="text-3xl font-bold text-foreground">Teacher Dashboard</h1>
-              <p className="text-muted-foreground">Monitor student mental health and well-being</p>
+            <div className="flex items-center space-x-4">
+              <Button variant="ghost" onClick={() => navigate("/")} className="text-muted-foreground hover:text-primary">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Home
+              </Button>
+              <div>
+                <h1 className="text-3xl font-bold text-foreground">Teacher Dashboard</h1>
+                <p className="text-muted-foreground">Monitor student mental health and well-being</p>
+              </div>
             </div>
-          </div>
-          <Button variant="outline" className="gap-2">
-            <Download className="w-4 h-4" />
-            Export Report
-          </Button>
         </div>
 
-        {/* Statistics Cards */}
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Students</CardTitle><Users className="h-4 w-4 text-muted-foreground" /></CardHeader>
@@ -255,11 +441,11 @@ const TeacherDashboard = () => {
             </Card>
         </div>
 
-        {/* Filters and Search */}
+        {/* Student Management Card */}
         <Card>
           <CardHeader>
-            <CardTitle>Student Management</CardTitle>
-            <CardDescription>Filter and search through student records</CardDescription>
+              <CardTitle>Student Management</CardTitle>
+              <CardDescription>Filter and search through student records</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col md:flex-row gap-4 mb-6">
@@ -287,7 +473,7 @@ const TeacherDashboard = () => {
               </Select>
             </div>
 
-            {/* Students Table */}
+            {/* Student Table */}
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
@@ -303,7 +489,7 @@ const TeacherDashboard = () => {
                 </TableHeader>
                 <TableBody>
                   {filteredStudents.map((student) => (
-                    <TableRow key={student.uid}>
+                    <TableRow key={student.uid} className={student.needsHelp ? "bg-red-50 hover:bg-red-100" : ""}>
                       <TableCell className="font-medium">{student.name}</TableCell>
                       <TableCell>{student.class}{student.division}</TableCell>
                       <TableCell>{getScoreBadge(student.depressionScore, "depression")}</TableCell>
@@ -311,9 +497,21 @@ const TeacherDashboard = () => {
                       <TableCell>{getScoreBadge(student.stressScore, "stress")}</TableCell>
                       <TableCell>{getStatusBadge(getMentalHealthStatus(student))}</TableCell>
                       <TableCell>
-                        <Dialog onOpenChange={(open) => !open && setSelectedStudent(null)}>
+                        <Dialog onOpenChange={(open) => {
+                            if (!open) {
+                                setSelectedStudent(null);
+                                setJournalEntries([]);
+                            }
+                        }}>
                           <DialogTrigger asChild>
-                            <Button variant="outline" size="sm" onClick={() => setSelectedStudent(student)}>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => {
+                                setSelectedStudent(student);
+                                fetchStudentJournals(student.uid);
+                              }}
+                            >
                               <FileText className="w-4 h-4 mr-2" />
                               View Details
                             </Button>
@@ -321,11 +519,19 @@ const TeacherDashboard = () => {
                           {selectedStudent && selectedStudent.uid === student.uid && (
                             <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
                               <DialogHeader>
-                                <DialogTitle>Student Reports - {selectedStudent.name}</DialogTitle>
-                                <DialogDescription>
-                                  Class {selectedStudent.class}{selectedStudent.division} •{" "}
-                                  {selectedStudent.reportsCount || 0} total reports
-                                </DialogDescription>
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <DialogTitle>Student Reports - {selectedStudent.name}</DialogTitle>
+                                    <DialogDescription>
+                                      Class {selectedStudent.class}{selectedStudent.division} •{" "}
+                                      {selectedStudent.reportsCount || 0} total reports
+                                    </DialogDescription>
+                                  </div>
+                                  <Button variant="outline" onClick={() => handleExportReport(selectedStudent.uid)}>
+                                    <ExternalLink className="w-4 h-4 mr-2" />
+                                    Export Full Report
+                                  </Button>
+                                </div>
                               </DialogHeader>
                               <Tabs defaultValue="analysis" className="w-full">
                                 <TabsList className="grid w-full grid-cols-2">
@@ -337,26 +543,48 @@ const TeacherDashboard = () => {
                                     <CardHeader><CardTitle>Mental Health Summary</CardTitle></CardHeader>
                                     <CardContent className="space-y-4">
                                       <div className="grid grid-cols-3 gap-4">
-                                        <div>
-                                          <label className="text-sm font-medium">Depression</label>
-                                          <div className="mt-1">{getScoreBadge(selectedStudent.depressionScore, "depression")}</div>
-                                        </div>
-                                        <div>
-                                          <label className="text-sm font-medium">Anxiety</label>
-                                          <div className="mt-1">{getScoreBadge(selectedStudent.anxietyScore, "anxiety")}</div>
-                                        </div>
-                                        <div>
-                                          <label className="text-sm font-medium">Stress</label>
-                                          <div className="mt-1">{getScoreBadge(selectedStudent.stressScore, "stress")}</div>
-                                        </div>
+                                        <div><label className="text-sm font-medium">Depression</label><div className="mt-1">{getScoreBadge(selectedStudent.depressionScore, "depression")}</div></div>
+                                        <div><label className="text-sm font-medium">Anxiety</label><div className="mt-1">{getScoreBadge(selectedStudent.anxietyScore, "anxiety")}</div></div>
+                                        <div><label className="text-sm font-medium">Stress</label><div className="mt-1">{getScoreBadge(selectedStudent.stressScore, "stress")}</div></div>
                                       </div>
                                       <div>
                                         <label className="text-sm font-medium">Recommendations</label>
-                                        {/* ✅ RECOMMENDATIONS ARE NOW DYNAMIC */}
                                         <div className="mt-2 p-4 bg-muted rounded-lg">
                                             {getRecommendations(selectedStudent)}
                                         </div>
                                       </div>
+                                    </CardContent>
+                                  </Card>
+                                </TabsContent>
+                                <TabsContent value="essays" className="space-y-4">
+                                  <Card>
+                                    <CardHeader>
+                                      <CardTitle>Journal Entry Analysis</CardTitle>
+                                      <CardDescription>
+                                        Sentiment analysis of the student's private journal entries.
+                                      </CardDescription>
+                                    </CardHeader>
+                                    <CardContent>
+                                      {journalsLoading ? (
+                                        <p>Loading journal entries...</p>
+                                      ) : journalEntries.length > 0 ? (
+                                        <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+                                          {journalEntries.map((entry) => (
+                                            <div key={entry.id} className="p-4 rounded-lg border bg-muted/30">
+                                              <div className="flex justify-between items-center mb-2">
+                                                <p className="text-sm font-medium text-muted-foreground">
+                                                  {formatTimestamp(entry.timestamp)}
+                                                </p>
+                                                {/* This will now show Score + Severity */}
+                                                {getSentimentUI(entry.sentimentScore, entry.sentimentMagnitude)}
+                                              </div>
+                                              <p className="whitespace-pre-wrap">{entry.content}</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p>No journal entries found for this student.</p>
+                                      )}
                                     </CardContent>
                                   </Card>
                                 </TabsContent>
@@ -375,10 +603,10 @@ const TeacherDashboard = () => {
 
         {/* Logout Button */}
         <div className="flex justify-end pt-4">
-          <Button variant="ghost" className="flex items-center gap-2" onClick={async () => { await signOut(auth); navigate("/teacher-login"); }}>
-            <LogOut className="w-4 h-4" />
-            Logout
-          </Button>
+            <Button variant="ghost" className="flex items-center gap-2" onClick={async () => { await signOut(auth); navigate("/teacher-login"); }}>
+              <LogOut className="w-4 h-4" />
+              Logout
+            </Button>
         </div>
       </div>
     </div>
