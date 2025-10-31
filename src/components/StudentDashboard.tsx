@@ -30,7 +30,7 @@
     import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
     import { BehavioralScores } from "@/lib/healthCalculations";
     import MindCareGame from "./MindCareGame"; // The original game component
-
+    import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
     export interface Student {
         uid: string;
         name: string;
@@ -349,9 +349,9 @@
                                     </Card>
 
                                     <Card className="border-0 shadow-card bg-card/50 backdrop-blur-sm">
-                                        <CardHeader><CardTitle className="text-2xl text-foreground flex items-center">Google Fit Data</CardTitle><CardDescription>Your activity and sleep patterns from Google Fit.</CardDescription></CardHeader>
-                                        <CardContent><GoogleFit accessToken={googleAccessToken} onScoresCalculated={handleScoresCalculated} /></CardContent>
-                                    </Card>
+    <CardHeader><CardTitle className="text-2xl text-foreground flex items-center">Google Fit Data</CardTitle><CardDescription>Your activity and sleep patterns from Google Fit.</CardDescription></CardHeader>
+    <CardContent><GoogleFit accessToken={googleAccessToken} onScoresCalculated={handleScoresCalculated} user={user} /></CardContent>
+</Card>
 
                                     <Card className="border-0 shadow-card bg-card/50 backdrop-blur-sm">
                                         <CardHeader><CardTitle className="text-2xl text-foreground flex items-center">Google Classroom</CardTitle><CardDescription>View your upcoming assignments.</CardDescription></CardHeader>

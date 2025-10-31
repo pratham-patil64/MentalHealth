@@ -16,7 +16,9 @@ import {
 import { Student } from "./StudentDashboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Heart, Brain, AlertTriangle, Printer, FileText, BookOpen, ClipboardCheck } from "lucide-react";
+import { Heart, Brain, AlertTriangle, Printer, FileText, BookOpen, ClipboardCheck, Activity, BedDouble, Droplets, Flame } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
 
 // Interface for journal entries (same as before)
 interface JournalEntry {
@@ -42,6 +44,13 @@ interface Test {
   scores: Record<string, number>;
 }
 
+// --- NEW: Interface for Fit Data ---
+interface FitData {
+    type: 'steps' | 'sleep' | 'heartRate' | 'calories';
+    data: any[];
+    timestamp: Timestamp;
+}
+
 
 // --- ‼ NEW: Helper function to generate the analysis text ---
 const generateReportAnalysis = (
@@ -49,7 +58,8 @@ const generateReportAnalysis = (
   journals: JournalEntry[],
   pendingAssignmentsCount: number,
   tests: Test[],
-  studentId: string
+  studentId: string,
+  fitData: FitData[]
 ) => {
   const analysisPoints: string[] = [];
 
@@ -94,6 +104,24 @@ const generateReportAnalysis = (
   if (highRiskJournals.length > 0) {
     analysisPoints.push(`The journal history contains ${highRiskJournals.length} entries with highly negative and severe sentiment, correlating with the high scores.`);
   }
+
+    // --- NEW: Google Fit Analysis ---
+    const sleepData = fitData.find(d => d.type === 'sleep')?.data;
+    if (sleepData && sleepData.length > 0) {
+        const avgSleepHours = sleepData.reduce((sum, day) => sum + day.hours, 0) / sleepData.length;
+        if (avgSleepHours < 6.5) {
+            analysisPoints.push(`Google Fit data shows an average of only ${avgSleepHours.toFixed(1)} hours of sleep per night, which is below the recommended amount and can significantly impact mood and stress.`);
+        }
+    }
+
+    const stepsData = fitData.find(d => d.type === 'steps')?.data;
+    if (stepsData && stepsData.length > 0) {
+        const avgSteps = stepsData.reduce((sum, day) => sum + day.steps, 0) / stepsData.length;
+        if (avgSteps < 5000) {
+            analysisPoints.push(`The student's average daily step count is low (${Math.round(avgSteps)} steps). Lack of physical activity can be linked to higher stress and lower mood.`);
+        }
+    }
+
 
   if (analysisPoints.length === 0) {
     analysisPoints.push("This student's scores and journal entries are within normal parameters. Routine monitoring is recommended.");
@@ -173,6 +201,7 @@ const StudentReport = () => {
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [tests, setTests] = useState<Test[]>([]);
+  const [fitData, setFitData] = useState<FitData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -217,6 +246,22 @@ const StudentReport = () => {
         const fetchedTests = testsQuery.docs.map(doc => ({ id: doc.id, ...doc.data() } as Test));
         setTests(fetchedTests);
 
+        // --- NEW: Fetch Google Fit data ---
+        const sevenDaysAgoInSeconds = Math.floor(Date.now() / 1000) - (7 * 24 * 60 * 60);
+        const fitDataQuery = query(collection(db, "students", studentId, "fitData"), orderBy("timestamp", "desc"), where("timestamp", ">", new Timestamp(sevenDaysAgoInSeconds, 0)));
+        const fitDataSnapshot = await getDocs(fitDataQuery);
+        const fetchedFitData = fitDataSnapshot.docs.map(d => d.data() as FitData);
+
+        // Simple deduplication - get the latest of each type
+        const latestFitData: { [key: string]: FitData } = {};
+        fetchedFitData.forEach(item => {
+            if (!latestFitData[item.type] || item.timestamp > latestFitData[item.type].timestamp) {
+                latestFitData[item.type] = item;
+            }
+        });
+        setFitData(Object.values(latestFitData));
+
+
       } catch (error) {
         console.error("Error fetching report data:", error);
       }
@@ -231,6 +276,11 @@ const StudentReport = () => {
       !assignment.completedBy.includes(studentId ?? "") &&
       new Date(assignment.dueDate) < new Date()
   ).length;
+
+  const getChartData = (type: FitData['type']) => {
+      const data = fitData.find(d => d.type === type)?.data;
+      return Array.isArray(data) ? data : [];
+  }
 
   if (loading) {
     return <div className="p-10">Loading report...</div>;
@@ -276,7 +326,7 @@ const StudentReport = () => {
           Summary & Analysis
         </h2>
         <div className="text-gray-800">
-          {generateReportAnalysis(student, journalEntries, pendingAssignmentsCount, tests, studentId ?? "")}
+          {generateReportAnalysis(student, journalEntries, pendingAssignmentsCount, tests, studentId ?? "", fitData)}
         </div>
       </section>
 
@@ -343,6 +393,63 @@ const StudentReport = () => {
           </div>
         </section>
       </div>
+
+       {/* --- NEW: GOOGLE FIT DATA SECTION --- */}
+       <section className="mb-8 p-6 border rounded-lg">
+           <h2 className="text-2xl font-semibold mb-4 border-b pb-2">
+               Behavioral Health Data (from Google Fit)
+           </h2>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div>
+                   <h3 className="font-semibold text-center mb-2 flex items-center justify-center gap-2"><Activity className="w-5 h-5"/>Weekly Steps</h3>
+                   <ResponsiveContainer width="100%" height={250}>
+                       <BarChart data={getChartData('steps')}>
+                           <XAxis dataKey="date" fontSize={12} />
+                           <YAxis fontSize={12} />
+                           <Tooltip />
+                           <Legend />
+                           <Bar dataKey="steps" fill="#8884d8" />
+                       </BarChart>
+                   </ResponsiveContainer>
+               </div>
+               <div>
+                   <h3 className="font-semibold text-center mb-2 flex items-center justify-center gap-2"><BedDouble className="w-5 h-5"/>Weekly Sleep (Hours)</h3>
+                   <ResponsiveContainer width="100%" height={250}>
+                       <BarChart data={getChartData('sleep')}>
+                           <XAxis dataKey="date" fontSize={12} />
+                           <YAxis fontSize={12} />
+                           <Tooltip />
+                           <Legend />
+                           <Bar dataKey="hours" fill="#82ca9d" />
+                       </BarChart>
+                   </ResponsiveContainer>
+               </div>
+               <div>
+                   <h3 className="font-semibold text-center mb-2 flex items-center justify-center gap-2"><Droplets className="w-5 h-5"/>Weekly Heart Rate (Avg BPM)</h3>
+                   <ResponsiveContainer width="100%" height={250}>
+                       <BarChart data={getChartData('heartRate')}>
+                           <XAxis dataKey="date" fontSize={12} />
+                           <YAxis fontSize={12}/>
+                           <Tooltip />
+                           <Legend />
+                           <Bar dataKey="bpm" fill="#ffc658" />
+                       </BarChart>
+                   </ResponsiveContainer>
+               </div>
+               <div>
+                   <h3 className="font-semibold text-center mb-2 flex items-center justify-center gap-2"><Flame className="w-5 h-5"/>Weekly Calories Burned</h3>
+                   <ResponsiveContainer width="100%" height={250}>
+                       <BarChart data={getChartData('calories')}>
+                           <XAxis dataKey="date" fontSize={12}/>
+                           <YAxis fontSize={12}/>
+                           <Tooltip />
+                           <Legend />
+                           <Bar dataKey="calories" fill="#ff8042" />
+                       </BarChart>
+                   </ResponsiveContainer>
+               </div>
+           </div>
+       </section>
 
       <section className="p-6 border rounded-lg">
         <h2 className="text-2xl font-semibold mb-4 border-b pb-2">

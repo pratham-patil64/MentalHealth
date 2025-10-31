@@ -415,7 +415,7 @@ const TeacherDashboard = () => {
                 Back to Home
               </Button>
               <div>
-                <h1 className="text-3xl font-bold text-foreground">Teacher Dashboard</h1>
+                <h1 className="text-3xl font-bold text-foreground">Admin Dashboard</h1>
                 <p className="text-muted-foreground">Monitor student mental health and well-being</p>
               </div>
             </div>

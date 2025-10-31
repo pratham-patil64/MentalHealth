@@ -1,4 +1,4 @@
-// GoogleFit.tsx
+// src/components/GoogleFit.tsx
 
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -16,13 +16,17 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { db } from '@/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { User } from 'firebase/auth';
 
 interface GoogleFitProps {
   accessToken: string | null;
   onScoresCalculated: (scores: BehavioralScores) => void;
+  user: User;
 }
 
-const GoogleFit = ({ accessToken, onScoresCalculated }: GoogleFitProps) => {
+const GoogleFit = ({ accessToken, onScoresCalculated, user }: GoogleFitProps) => {
     const [profile, setProfile] = useState<any>(null);
     const [steps, setSteps] = useState<any[]>([]);
     const [sleep, setSleep] = useState<any[]>([]);
@@ -35,6 +39,22 @@ const GoogleFit = ({ accessToken, onScoresCalculated }: GoogleFitProps) => {
     const [isSleepModalOpen, setIsSleepModalOpen] = useState(false);
     const [manualSleep, setManualSleep] = useState("");
     const [avgSteps, setAvgSteps] = useState(0); // Store avg steps
+
+    // Function to save data to Firestore
+    const saveDataToFirestore = async (dataType: string, data: any) => {
+        if (!user) return;
+        try {
+            const fitDataCollectionRef = collection(db, "students", user.uid, "fitData");
+            await addDoc(fitDataCollectionRef, {
+                type: dataType,
+                data,
+                timestamp: serverTimestamp(),
+            });
+        } catch (error) {
+            console.error(`Error saving ${dataType} data to Firestore:`, error);
+        }
+    };
+
 
     useEffect(() => {
         const fetchData = async () => {
@@ -65,6 +85,7 @@ const GoogleFit = ({ accessToken, onScoresCalculated }: GoogleFitProps) => {
                         steps: bucket.dataset[0]?.point?.[0]?.value?.[0]?.intVal || 0
                     }));
                     setSteps(dailySteps);
+                    saveDataToFirestore('steps', dailySteps);
                     if (dailySteps.length > 0) {
                         const totalSteps = dailySteps.reduce((sum, day) => sum + day.steps, 0);
                         calculatedAvgSteps = totalSteps / dailySteps.length;
@@ -90,6 +111,7 @@ const GoogleFit = ({ accessToken, onScoresCalculated }: GoogleFitProps) => {
                         };
                     });
                     setSleep(dailySleep);
+                    saveDataToFirestore('sleep', dailySleep);
                     sleepDataFound = dailySleep.length > 0 && dailySleep.some(day => day.hours > 0);
                 }
 
@@ -108,10 +130,19 @@ const GoogleFit = ({ accessToken, onScoresCalculated }: GoogleFitProps) => {
 
                 // Fetch other data for display
                 const heartResponse = await axios.post('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', { ...requestBodyBase, aggregateBy: [{ dataTypeName: 'com.google.heart_rate.bpm' }] }, { headers });
-                if (heartResponse.data.bucket) setHeartRate(heartResponse.data.bucket.map((b: any) => ({ date: new Date(parseInt(b.startTimeMillis)).toLocaleDateString(), bpm: Math.round(b.dataset[0]?.point?.[0]?.value?.[0]?.fpVal || 0) })));
+                if (heartResponse.data.bucket) {
+                    const heartData = heartResponse.data.bucket.map((b: any) => ({ date: new Date(parseInt(b.startTimeMillis)).toLocaleDateString(), bpm: Math.round(b.dataset[0]?.point?.[0]?.value?.[0]?.fpVal || 0) }));
+                    setHeartRate(heartData);
+                    saveDataToFirestore('heartRate', heartData);
+                }
+
 
                 const caloriesResponse = await axios.post('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', { ...requestBodyBase, aggregateBy: [{ dataTypeName: 'com.google.calories.expended' }] }, { headers });
-                if (caloriesResponse.data.bucket) setCalories(caloriesResponse.data.bucket.map((b: any) => ({ date: new Date(parseInt(b.startTimeMillis)).toLocaleDateString(), calories: Math.round(b.dataset[0]?.point?.[0]?.value?.[0]?.fpVal || 0) })));
+                if (caloriesResponse.data.bucket) {
+                    const calorieData = caloriesResponse.data.bucket.map((b: any) => ({ date: new Date(parseInt(b.startTimeMillis)).toLocaleDateString(), calories: Math.round(b.dataset[0]?.point?.[0]?.value?.[0]?.fpVal || 0) }));
+                    setCalories(calorieData);
+                    saveDataToFirestore('calories', calorieData);
+                }
             } catch (err: any) {
                 console.error("Google Fit API Error:", err.response ? err.response.data : err.message);
                 if (err.response?.status === 401 || err.response?.status === 403) {
@@ -150,6 +181,7 @@ const GoogleFit = ({ accessToken, onScoresCalculated }: GoogleFitProps) => {
         }));
 
         setSleep(manualSleepData);
+        saveDataToFirestore('sleep', manualSleepData);
         setIsSleepModalOpen(false);
         setManualSleep("");
         setError(null); // Clear error after submission
