@@ -293,7 +293,7 @@ const TeacherDashboard = () => {
       case 'Positive':
         return (
           <div className="space-y-2">
-            <p className="text-sm font-bold text-green-700">✅ Student is showing positive signs</p>
+            <p className="text-sm font-bold text-green-700">Student is showing positive signs</p>
             <p className="text-sm">• Acknowledge their progress if the opportunity arises.</p>
             <p className="text-sm">• Encourage continued use of journaling and wellness tools.</p>
             <p className="text-sm">• Continue routine monitoring.</p>
