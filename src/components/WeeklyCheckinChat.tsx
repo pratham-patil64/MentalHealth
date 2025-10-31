@@ -39,7 +39,7 @@ const allQuestions = [
 
 const answerOptions = [
     { text: "Not at all", score: 0 },
-    { text: "Several days", score: 1 },
+    { text: "Less than half the days", score: 1 },
     { text: "More than half the days", score: 2 },
     { text: "Nearly every day", score: 3 },
 ];
