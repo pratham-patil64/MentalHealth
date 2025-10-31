@@ -102,9 +102,9 @@ const TeacherDashboard = () => {
     }
     const { depressionScore = 0, anxietyScore = 0, stressScore = 0 } = student;
     const thresholds = {
-      stress: { moderate: 5, mild: 3 },
-      anxiety: { moderate: 7, mild: 4 },
-      depression: { moderate: 8, mild: 4 },
+      stress: { moderate: 66, mild: 33 },
+      anxiety: { moderate: 66, mild: 33 },
+      depression: { moderate: 66, mild: 33 },
     };
     if (
       stressScore >= thresholds.stress.moderate ||
@@ -208,9 +208,9 @@ const TeacherDashboard = () => {
   ) => {
     if (score === undefined || score === null) return <Badge>N/A</Badge>;
     const thresholds = {
-      stress: { severe: 7, moderate: 5, mild: 3 },
-      anxiety: { severe: 10, moderate: 7, mild: 4 },
-      depression: { severe: 12, moderate: 8, mild: 4 },
+      stress: { severe: 70, moderate: 50, mild: 30 },
+      anxiety: { severe: 70, moderate: 50, mild: 30 },
+      depression: { severe: 70, moderate: 50, mild: 30 },
     };
     const { severe, moderate, mild } = thresholds[category];
     if (score >= severe) {
@@ -425,7 +425,7 @@ const TeacherDashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Students</CardTitle><Users className="h-4 w-4 text-muted-foreground" /></CardHeader>
-                <CardContent><div className="text-2xl font-bold">{totalStudents}</div><p className="text-xs text-muted-foreground">{maleStudents} Male, {femaleStudents} Female</p></CardContent>
+                <CardContent><div className="text-2xl font-bold">{totalStudents}</div></CardContent>
             </Card>
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Positive Mental Health</CardTitle><Heart className="h-4 w-4 text-green-600" /></CardHeader>

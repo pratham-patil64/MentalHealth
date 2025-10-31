@@ -37,17 +37,17 @@ const generateReportAnalysis = (student: Student, journals: JournalEntry[]) => {
   }
   
   // Check scores
-  if (student.depressionScore && student.depressionScore >= 12) { // "Severe" threshold
+  if (student.depressionScore && student.depressionScore >= 50) { // "Severe" threshold
     analysisPoints.push(`Weekly check-ins show scores indicating a 'Severe' level of Depression (${student.depressionScore}).`);
-  } else if (student.depressionScore && student.depressionScore >= 8) { // "Moderate"
+  } else if (student.depressionScore && student.depressionScore >= 50) { // "Moderate"
     analysisPoints.push(`Weekly check-ins show scores indicating a 'Moderate' level of Depression (${student.depressionScore}).`);
   }
 
-  if (student.anxietyScore && student.anxietyScore >= 10) { // "Severe"
+  if (student.anxietyScore && student.anxietyScore >= 70) { // "Severe"
     analysisPoints.push(`Weekly check-ins show scores indicating a 'Severe' level of Anxiety (${student.anxietyScore}).`);
   }
   
-  if (student.stressScore && student.stressScore >= 7) { // "Severe"
+  if (student.stressScore && student.stressScore >= 70) { // "Severe"
     analysisPoints.push(`Weekly check-ins show scores indicating a 'Severe' level of Stress (${student.stressScore}).`);
   }
 
@@ -78,9 +78,9 @@ const getScoreBadge = (
 ) => {
     if (score === undefined || score === null) return <Badge>N/A</Badge>;
     const thresholds = {
-      stress: { severe: 7, moderate: 5, mild: 3 },
-      anxiety: { severe: 10, moderate: 7, mild: 4 },
-      depression: { severe: 12, moderate: 8, mild: 4 },
+      stress: { severe: 70, moderate: 50, mild: 30 },
+      anxiety: { severe: 70, moderate: 50, mild: 30 },
+      depression: { severe: 70, moderate: 50, mild: 30 },
     };
     const { severe, moderate, mild } = thresholds[category];
     if (score >= severe) {

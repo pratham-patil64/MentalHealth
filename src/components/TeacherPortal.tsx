@@ -7,6 +7,7 @@ import {
   updateDoc,
   addDoc,
   serverTimestamp,
+  getDoc,
 } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,31 @@ const TeacherPortal = () => {
   );
   const [loading, setLoading] = useState(false);
 
+  // Helper function to update a student's stress score
+  const updateStudentStressScore = async (
+    studentId: string,
+    adjustment: number
+  ) => {
+    const studentDocRef = doc(db, "students", studentId);
+    try {
+      const studentDoc = await getDoc(studentDocRef);
+      if (studentDoc.exists()) {
+        const studentData = studentDoc.data() as Student;
+        const currentStress = studentData.stressScore ?? 50; // Default to 50 if not set
+        let newStress = currentStress + adjustment;
+
+        // Clamp the score between 0 and 100
+        newStress = Math.max(0, Math.min(100, newStress));
+
+        await updateDoc(studentDocRef, {
+          stressScore: newStress,
+        });
+      }
+    } catch (error) {
+      console.error("Error updating stress score for student:", studentId, error);
+    }
+  };
+
   useEffect(() => {
     const studentsQuery = collection(db, "students");
     const unsubscribeStudents = onSnapshot(studentsQuery, (querySnapshot) => {
@@ -129,12 +155,18 @@ const TeacherPortal = () => {
     }
     setLoading(true);
     try {
-      await addDoc(collection(db, "assignments"), {
+      const newAssignment = {
         title: newAssignmentTitle,
         dueDate: newAssignmentDueDate,
         completedBy: [],
         createdAt: serverTimestamp(),
-      });
+      };
+      await addDoc(collection(db, "assignments"), newAssignment);
+
+      // Increase stress for all students for the new assignment
+      for (const student of students) {
+        await updateStudentStressScore(student.uid, 5); // Increase stress by 5
+      }
 
       setNewAssignmentTitle("");
       setNewAssignmentDueDate("");
@@ -201,6 +233,13 @@ const TeacherPortal = () => {
         completedBy: uniqueCompletedBy,
       });
 
+      // Adjust stress for newly completed assignments
+      for (const studentId in assignmentCompletion) {
+        if (assignmentCompletion[studentId]) {
+          await updateStudentStressScore(studentId, -10); // Decrease stress more
+        }
+      }
+
       setSelectedAssignment(null);
       setAssignmentCompletion({});
     } catch (error) {
@@ -223,6 +262,16 @@ const TeacherPortal = () => {
         const score = parseFloat(studentScores[studentId]);
         if (!isNaN(score)) {
           updatedScores[studentId] = score;
+
+          // Adjust stress based on score
+          const percentage = (score / selectedTest.maxScore) * 100;
+          if (percentage >= 85) {
+            await updateStudentStressScore(studentId, -15); // High score, big stress relief
+          } else if (percentage < 50) {
+            await updateStudentStressScore(studentId, 20); // Low score, significant stress increase
+          } else if (percentage < 70) {
+            await updateStudentStressScore(studentId, 10); // Average score, slight stress increase
+          }
         }
       }
 
